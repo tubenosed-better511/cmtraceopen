@@ -649,14 +649,12 @@ fn windows_known_log_sources() -> Vec<KnownSourceMetadata> {
 }
 
 fn build_known_log_sources() -> Vec<KnownSourceMetadata> {
-    let mut sources: Vec<KnownSourceMetadata> = Vec::new();
-
     #[cfg(target_os = "windows")]
     {
-        sources.extend(windows_known_log_sources());
+        return windows_known_log_sources();
     }
 
-    sources
+    Vec::new()
 }
 
 /// Return known platform log source metadata.
