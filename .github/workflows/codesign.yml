@@ -67,7 +67,23 @@ jobs:
         run: |
           $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $cargoVersion = [regex]::Match((Get-Content src-tauri/Cargo.toml -Raw), '(?m)^version\s*=\s*"([^"]+)"$').Groups[1].Value
+          $cargoVersion = $null
+          $inPackageSection = $false
+          foreach ($line in Get-Content src-tauri/Cargo.toml) {
+            if ($line -match '^\[package\]\s*$') {
+              $inPackageSection = $true
+              continue
+            }
+
+            if ($inPackageSection -and $line -match '^\[') {
+              break
+            }
+
+            if ($inPackageSection -and $line -match '^version\s*=\s*"([^"]+)"\s*$') {
+              $cargoVersion = $Matches[1]
+              break
+            }
+          }
 
           $versions = @{
             package = $packageVersion
