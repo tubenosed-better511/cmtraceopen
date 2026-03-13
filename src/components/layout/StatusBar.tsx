@@ -58,31 +58,50 @@ export function StatusBar() {
   const isFiltering = useFilterStore((s) => s.isFiltering);
   const filterError = useFilterStore((s) => s.filterError);
 
-  const { filteredCount, severityCounts, selectedPosition } = useMemo(() => {
+  const { filteredCount, severityCounts } = useMemo(() => {
     let errors = 0;
     let warnings = 0;
     let info = 0;
     let counter = 0;
-    let position: number | null = null;
 
     for (const entry of entries) {
       if (filteredIds && !filteredIds.has(entry.id)) continue;
       counter++;
       switch (entry.severity) {
-        case "Error": errors++; break;
-        case "Warning": warnings++; break;
-        case "Info": info++; break;
-      }
-      if (selectedId !== null && entry.id === selectedId) {
-        position = counter;
+        case "Error":
+          errors++;
+          break;
+        case "Warning":
+          warnings++;
+          break;
+        case "Info":
+          info++;
+          break;
       }
     }
 
     return {
       filteredCount: counter,
       severityCounts: { errors, warnings, info },
-      selectedPosition: selectedId !== null ? position : null,
     };
+  }, [entries, filteredIds]);
+
+  const selectedPosition = useMemo(() => {
+    if (selectedId === null) {
+      return null;
+    }
+
+    let counter = 0;
+
+    for (const entry of entries) {
+      if (filteredIds && !filteredIds.has(entry.id)) continue;
+      counter++;
+      if (entry.id === selectedId) {
+        return counter;
+      }
+    }
+
+    return null;
   }, [entries, filteredIds, selectedId]);
 
   let elapsedText = "";
