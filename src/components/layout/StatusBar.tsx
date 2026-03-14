@@ -16,6 +16,7 @@ import {
   useUiStore,
 } from "../../stores/ui-store";
 import { useIntuneStore } from "../../stores/intune-store";
+import { useDsregcmdStore } from "../../stores/dsregcmd-store";
 
 interface SeverityCounts {
   errors: number;
@@ -48,10 +49,16 @@ export function StatusBar() {
   const activeView = useUiStore((s) => s.activeView);
   const showDetails = useUiStore((s) => s.showDetails);
   const showInfoPane = useUiStore((s) => s.showInfoPane);
+
   const intuneAnalysisState = useIntuneStore((s) => s.analysisState);
   const intuneSummary = useIntuneStore((s) => s.summary);
   const intuneSourceContext = useIntuneStore((s) => s.sourceContext);
   const intuneTimelineScope = useIntuneStore((s) => s.timelineScope);
+
+  const dsregcmdAnalysisState = useDsregcmdStore((s) => s.analysisState);
+  const dsregcmdSourceContext = useDsregcmdStore((s) => s.sourceContext);
+  const dsregcmdResult = useDsregcmdStore((s) => s.result);
+  const dsregcmdIsAnalyzing = useDsregcmdStore((s) => s.isAnalyzing);
 
   const filterClauseCount = useFilterStore((s) => s.clauses.length);
   const filteredIds = useFilterStore((s) => s.filteredIds);
@@ -140,6 +147,7 @@ export function StatusBar() {
 
   let leftParts: string[] = [];
   let rightStatusText = "";
+  let rightTone: string | undefined;
 
   if (activeView === "log") {
     leftParts = [
@@ -169,30 +177,28 @@ export function StatusBar() {
     const logStatusText =
       entries.length > 0
         ? [
-          positionText ?? `${filteredCount} entries`,
-          `${totalLines} lines`,
-          severityText,
-          `${formatDetected ?? "Unknown"} format`,
-          parserDisplay?.provenanceLabel,
-          parserDisplay?.qualityLabel,
-        ]
-          .filter((part): part is string => Boolean(part))
-          .join(" | ")
+            positionText ?? `${filteredCount} entries`,
+            `${totalLines} lines`,
+            severityText,
+            `${formatDetected ?? "Unknown"} format`,
+            parserDisplay?.provenanceLabel,
+            parserDisplay?.qualityLabel,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(" | ")
         : failureReason
           ? `Reason: ${failureReason}`
           : sourceStatus.kind !== "idle"
             ? sourceStatus.detail ?? sourceStatus.message
             : "";
 
-    const filterStatusText =
-      filterError
-        ? `Filter error: ${filterError}`
-        : filterStatus.label;
+    const filterStatusText = filterError ? `Filter error: ${filterError}` : filterStatus.label;
 
     rightStatusText = [logStatusText, filterStatusText]
       .filter((part) => part.length > 0)
       .join(" | ");
-  } else {
+    rightTone = filterStatus.tone === "error" ? "#991b1b" : undefined;
+  } else if (activeView === "intune") {
     const intuneSourceLabel = getBaseName(
       intuneAnalysisState.requestedPath ?? intuneSourceContext.analyzedPath
     );
@@ -220,10 +226,12 @@ export function StatusBar() {
 
     if (intuneAnalysisState.phase === "analyzing") {
       rightStatusText = intuneAnalysisState.detail ?? intuneAnalysisState.message;
+      rightTone = "#1d4ed8";
     } else if (intuneAnalysisState.phase === "error" || intuneAnalysisState.phase === "empty") {
       rightStatusText = [intuneAnalysisState.message, intuneAnalysisState.detail]
         .filter((part): part is string => Boolean(part))
         .join(" | ");
+      rightTone = intuneAnalysisState.phase === "error" ? "#991b1b" : "#92400e";
     } else if (intuneSummary) {
       rightStatusText = [
         `${intuneSummary.totalEvents} events`,
@@ -234,6 +242,42 @@ export function StatusBar() {
         .join(" | ");
     } else {
       rightStatusText = intuneAnalysisState.message;
+    }
+  } else {
+    const diagnostics = dsregcmdResult?.diagnostics ?? [];
+    const errorCount = diagnostics.filter((item) => item.severity === "Error").length;
+    const warningCount = diagnostics.filter((item) => item.severity === "Warning").length;
+
+    leftParts = [
+      "dsregcmd",
+      dsregcmdIsAnalyzing
+        ? "Analyzing"
+        : dsregcmdResult
+          ? dsregcmdResult.derived.joinTypeLabel
+          : "No analysis",
+    ];
+
+    if (dsregcmdSourceContext.source !== null) {
+      leftParts.push(`Source ${dsregcmdSourceContext.displayLabel}`);
+    }
+
+    if (dsregcmdAnalysisState.phase === "analyzing") {
+      rightStatusText = dsregcmdAnalysisState.detail ?? dsregcmdAnalysisState.message;
+      rightTone = "#1d4ed8";
+    } else if (dsregcmdAnalysisState.phase === "error") {
+      rightStatusText = [dsregcmdAnalysisState.message, dsregcmdAnalysisState.detail]
+        .filter((part): part is string => Boolean(part))
+        .join(" | ");
+      rightTone = "#991b1b";
+    } else if (dsregcmdResult) {
+      rightStatusText = [
+        `${diagnostics.length} diagnostics`,
+        `${errorCount} errors`,
+        `${warningCount} warnings`,
+        `PRT ${dsregcmdResult.derived.azureAdPrtPresent === null ? "unknown" : dsregcmdResult.derived.azureAdPrtPresent ? "present" : "missing"}`,
+      ].join(" | ");
+    } else {
+      rightStatusText = dsregcmdAnalysisState.message;
     }
   }
 
@@ -268,18 +312,7 @@ export function StatusBar() {
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
-          color:
-            activeView === "intune"
-              ? intuneAnalysisState.phase === "error"
-                ? "#991b1b"
-                : intuneAnalysisState.phase === "empty"
-                  ? "#92400e"
-                  : intuneAnalysisState.phase === "analyzing"
-                    ? "#1d4ed8"
-                    : undefined
-              : filterStatus.tone === "error"
-                ? "#991b1b"
-                : undefined,
+          color: rightTone,
         }}
       >
         {rightStatusText}
