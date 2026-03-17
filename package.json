@@ -9,6 +9,7 @@
     "frontend:preview": "vite preview",
     "app:dev": "tauri dev",
     "app:build:debug": "tauri build --debug",
+    "app:build:exe-only": "tauri build --no-bundle",
     "app:build:release": "tauri build",
     "dev": "npm run frontend:dev",
     "build": "npm run frontend:build",
@@ -18,6 +19,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@fluentui/react-components": "^9.73.3",
     "@tanstack/react-virtual": "^3.13.21",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",

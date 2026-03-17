@@ -7,6 +7,12 @@ import {
   type CSSProperties,
   type ChangeEvent,
 } from "react";
+import {
+  Badge,
+  Button,
+  Divider,
+  Input,
+} from "@fluentui/react-components";
 import { open } from "@tauri-apps/plugin-dialog";
 import { analyzeIntuneLogs, inspectPathKind } from "../../lib/commands";
 import {
@@ -21,7 +27,7 @@ import {
 import { useFilterStore } from "../../stores/filter-store";
 import { useIntuneStore } from "../../stores/intune-store";
 import { useDsregcmdStore } from "../../stores/dsregcmd-store";
-import { type WorkspaceId, useUiStore } from "../../stores/ui-store";
+import { isIntuneWorkspace, type IntuneWorkspaceId, type WorkspaceId, useUiStore } from "../../stores/ui-store";
 import {
   getLogSourcePath,
   getKnownSourceMetadataById,
@@ -75,8 +81,10 @@ const DSREGCMD_FILE_DIALOG_FILTERS = [
   { name: "All Files", extensions: ["*"] },
 ];
 
+const LIVE_INTUNE_SOURCE_ID = "windows-intune-ime-logs";
+
 function getOpenFileDialogFilters(workspace: WorkspaceId) {
-  if (workspace === "intune") {
+  if (isIntuneWorkspace(workspace)) {
     return INTUNE_FILE_DIALOG_FILTERS;
   }
 
@@ -96,10 +104,10 @@ function getOpenActionLabels(workspace: WorkspaceId) {
     };
   }
 
-  if (workspace === "intune") {
+  if (isIntuneWorkspace(workspace)) {
     return {
       file: "Open IME Log File",
-      folder: "Open IME Log Folder",
+      folder: "Open IME Or Evidence Folder",
       openPlaceholder: "Open Intune Source...",
     };
   }
@@ -119,6 +127,22 @@ async function inferPathKind(path: string): Promise<"file" | "folder" | "unknown
   }
 }
 
+function createIntuneAnalysisRequestId(): string {
+  return `intune-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function shouldSyncSourceBeforeIntuneAnalysis(source: LogSource): boolean {
+  if (source.kind === "file") {
+    return true;
+  }
+
+  return source.kind === "known" && source.pathKind === "file";
+}
+
+function shouldIncludeLiveEventLogs(source: LogSource): boolean {
+  return source.kind === "known" && source.sourceId === LIVE_INTUNE_SOURCE_ID;
+}
+
 export interface OpenKnownSourceCatalogAction
   extends KnownSourceCatalogActionIds {
   trigger: string;
@@ -133,6 +157,7 @@ export interface AppCommandState {
   canRefresh: boolean;
   canToggleDetailsPane: boolean;
   canToggleInfoPane: boolean;
+  canShowEvidenceBundle: boolean;
   isLoading: boolean;
   isPaused: boolean;
   hasActiveSource: boolean;
@@ -160,6 +185,11 @@ export interface AppActionHandlers {
   showFilterDialog: () => void;
   showErrorLookupDialog: () => void;
   showAboutDialog: () => void;
+  showAccessibilityDialog: () => void;
+  showEvidenceBundleDialog: () => void;
+  increaseLogListTextSize: () => void;
+  decreaseLogListTextSize: () => void;
+  resetLogListTextSize: () => void;
   togglePauseResume: () => void;
   refreshActiveSource: () => Promise<void>;
   toggleDetailsPane: () => void;
@@ -183,7 +213,7 @@ function getToolbarControlStyle(options: {
 
   return {
     border: "1px solid #9ca3af",
-    borderRadius: "2px",
+    borderRadius: "6px",
     backgroundColor: disabled ? "#e5e7eb" : toneColors[tone],
     color: disabled ? "#6b7280" : "#111827",
     fontWeight: active ? 600 : 400,
@@ -199,12 +229,15 @@ export function useAppActions(): AppActionHandlers {
   const activeSource = useLogStore((s) => s.activeSource);
   const openFilePath = useLogStore((s) => s.openFilePath);
   const selectedSourceFilePath = useLogStore((s) => s.selectedSourceFilePath);
+  const bundleMetadata = useLogStore((s) => s.bundleMetadata);
   const intuneIsAnalyzing = useIntuneStore((s) => s.isAnalyzing);
+  const intuneEvidenceBundle = useIntuneStore((s) => s.evidenceBundle);
   const beginIntuneAnalysis = useIntuneStore((s) => s.beginAnalysis);
   const failIntuneAnalysis = useIntuneStore((s) => s.failAnalysis);
   const setIntuneResults = useIntuneStore((s) => s.setResults);
   const dsregcmdIsAnalyzing = useDsregcmdStore((s) => s.isAnalyzing);
   const dsregcmdSource = useDsregcmdStore((s) => s.sourceContext.source);
+  const dsregcmdBundlePath = useDsregcmdStore((s) => s.sourceContext.bundlePath);
 
   const activeWorkspace = useUiStore((s) => s.activeWorkspace);
   const activeView = useUiStore((s) => s.activeView);
@@ -216,6 +249,19 @@ export function useAppActions(): AppActionHandlers {
     (s) => s.setShowErrorLookupDialog
   );
   const setShowAboutDialog = useUiStore((s) => s.setShowAboutDialog);
+  const setShowAccessibilityDialog = useUiStore(
+    (s) => s.setShowAccessibilityDialog
+  );
+  const setShowEvidenceBundleDialog = useUiStore(
+    (s) => s.setShowEvidenceBundleDialog
+  );
+  const increaseLogListFontSize = useUiStore(
+    (s) => s.increaseLogListFontSize
+  );
+  const decreaseLogListFontSize = useUiStore(
+    (s) => s.decreaseLogListFontSize
+  );
+  const resetLogListFontSize = useUiStore((s) => s.resetLogListFontSize);
 
   const activeFilterCount = useFilterStore((s) => s.clauses.length);
   const isFiltering = useFilterStore((s) => s.isFiltering);
@@ -244,6 +290,12 @@ export function useAppActions(): AppActionHandlers {
           : refreshSource !== null),
       canToggleDetailsPane: activeView === "log",
       canToggleInfoPane: activeView === "log",
+      canShowEvidenceBundle:
+        activeView === "log"
+          ? bundleMetadata !== null
+          : isIntuneWorkspace(activeView)
+            ? intuneEvidenceBundle !== null
+            : dsregcmdBundlePath !== null,
       isLoading: isSourceCommandBusy,
       isPaused,
       hasActiveSource:
@@ -261,9 +313,12 @@ export function useAppActions(): AppActionHandlers {
       activeWorkspace,
       activeFilterCount,
       activeView,
+      bundleMetadata,
+      dsregcmdBundlePath,
       dsregcmdSource,
       entriesCount,
       filterError,
+      intuneEvidenceBundle,
       intuneIsAnalyzing,
       isFiltering,
       isLoading,
@@ -294,23 +349,29 @@ export function useAppActions(): AppActionHandlers {
   );
 
   const analyzeIntuneWorkspaceSource = useCallback(
-    async (source: LogSource, trigger: string) => {
-      useUiStore.getState().ensureWorkspaceVisible("intune", trigger);
+    async (source: LogSource, trigger: string, workspace: IntuneWorkspaceId) => {
+      useUiStore.getState().ensureWorkspaceVisible(workspace, trigger);
+      const requestId = createIntuneAnalysisRequestId();
       beginIntuneAnalysis(
         getLogSourcePath(source),
-        source.kind === "known" ? "known" : source.kind
+        source.kind === "known" ? "known" : source.kind,
+        requestId
       );
 
       try {
-        await loadLogSource(source).catch((error) => {
-          console.warn("[app-actions] failed to sync source before Intune analysis", {
-            source,
-            trigger,
-            error,
+        if (shouldSyncSourceBeforeIntuneAnalysis(source)) {
+          await loadLogSource(source).catch((error) => {
+            console.warn("[app-actions] failed to sync source before Intune analysis", {
+              source,
+              trigger,
+              error,
+            });
           });
-        });
+        }
 
-        const result = await analyzeIntuneLogs(getLogSourcePath(source));
+        const result = await analyzeIntuneLogs(getLogSourcePath(source), requestId, {
+          includeLiveEventLogs: shouldIncludeLiveEventLogs(source),
+        });
 
         startTransition(() => {
           setIntuneResults(
@@ -324,6 +385,8 @@ export function useAppActions(): AppActionHandlers {
               diagnosticsConfidence: result.diagnosticsConfidence,
               diagnosticsCoverage: result.diagnosticsCoverage,
               repeatedFailures: result.repeatedFailures,
+              evidenceBundle: result.evidenceBundle ?? null,
+              eventLogAnalysis: result.eventLogAnalysis ?? null,
             }
           );
         });
@@ -354,8 +417,8 @@ export function useAppActions(): AppActionHandlers {
 
   const openSourceForWorkspace = useCallback(
     async (source: LogSource, trigger: string, workspace: WorkspaceId) => {
-      if (workspace === "intune") {
-        await analyzeIntuneWorkspaceSource(source, trigger);
+      if (isIntuneWorkspace(workspace)) {
+        await analyzeIntuneWorkspaceSource(source, trigger, workspace);
         return;
       }
 
@@ -381,13 +444,13 @@ export function useAppActions(): AppActionHandlers {
         return;
       }
 
-      if (activeWorkspace === "intune") {
+      if (isIntuneWorkspace(activeWorkspace)) {
         const pathKind = await inferPathKind(path);
         const source: LogSource =
           pathKind === "folder"
             ? { kind: "folder", path }
             : { kind: "file", path };
-        await analyzeIntuneWorkspaceSource(source, "drag-drop.path-open");
+        await analyzeIntuneWorkspaceSource(source, "drag-drop.path-open", activeWorkspace);
         return;
       }
 
@@ -544,6 +607,43 @@ export function useAppActions(): AppActionHandlers {
     setShowAboutDialog(true);
   }, [setShowAboutDialog]);
 
+  const showAccessibilityDialog = useCallback(() => {
+    setShowAccessibilityDialog(true);
+  }, [setShowAccessibilityDialog]);
+
+  const showEvidenceBundleDialog = useCallback(() => {
+    const canShowForView =
+      activeView === "log"
+        ? bundleMetadata !== null
+        : isIntuneWorkspace(activeView)
+          ? intuneEvidenceBundle !== null
+          : dsregcmdBundlePath !== null;
+
+    if (!canShowForView) {
+      return;
+    }
+
+    setShowEvidenceBundleDialog(true);
+  }, [
+    activeView,
+    bundleMetadata,
+    dsregcmdBundlePath,
+    intuneEvidenceBundle,
+    setShowEvidenceBundleDialog,
+  ]);
+
+  const increaseLogListTextSize = useCallback(() => {
+    increaseLogListFontSize();
+  }, [increaseLogListFontSize]);
+
+  const decreaseLogListTextSize = useCallback(() => {
+    decreaseLogListFontSize();
+  }, [decreaseLogListFontSize]);
+
+  const resetLogListTextSize = useCallback(() => {
+    resetLogListFontSize();
+  }, [resetLogListFontSize]);
+
   const togglePauseResume = useCallback(() => {
     if (!commandState.canPauseResume) {
       return;
@@ -566,8 +666,8 @@ export function useAppActions(): AppActionHandlers {
       return;
     }
 
-    if (activeWorkspace === "intune") {
-      await analyzeIntuneWorkspaceSource(refreshSource, "app-actions.refresh");
+    if (isIntuneWorkspace(activeWorkspace)) {
+      await analyzeIntuneWorkspaceSource(refreshSource, "app-actions.refresh", activeWorkspace);
       return;
     }
 
@@ -619,6 +719,11 @@ export function useAppActions(): AppActionHandlers {
     showFilterDialog,
     showErrorLookupDialog,
     showAboutDialog,
+    showAccessibilityDialog,
+    showEvidenceBundleDialog,
+    increaseLogListTextSize,
+    decreaseLogListTextSize,
+    resetLogListTextSize,
     togglePauseResume,
     refreshActiveSource,
     toggleDetailsPane,
@@ -648,6 +753,7 @@ export function Toolbar() {
     pasteDsregcmdSource,
     captureDsregcmdSource,
     showErrorLookupDialog,
+    showEvidenceBundleDialog,
     togglePauseResume,
     refreshActiveSource,
     toggleDetailsPane,
@@ -734,10 +840,10 @@ export function Toolbar() {
         flexWrap: "wrap",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: "8px",
-        padding: "6px 8px",
-        backgroundColor: "#f0f0f0",
-        borderBottom: "1px solid #c0c0c0",
+        gap: "10px",
+        padding: "10px 12px",
+        backgroundColor: "#f8fafc",
+        borderBottom: "1px solid #d8e1ec",
         flexShrink: 0,
       }}
     >
@@ -782,7 +888,7 @@ export function Toolbar() {
           <option value="">
             {commandState.canOpenKnownSources
               ? knownSourceToolbarGroups.length > 0
-                ? activeView === "intune"
+                ? isIntuneWorkspace(activeView)
                   ? "Open Known Intune Source..."
                   : "Open Known Log Source..."
                 : "No Known Log Sources"
@@ -799,22 +905,19 @@ export function Toolbar() {
           ))}
         </select>
 
-        <div style={{ width: "1px", height: "16px", backgroundColor: "#c0c0c0", margin: "0 2px" }} />
+        <Divider vertical />
 
-        <button
+        <Button
           onClick={togglePauseResume}
           title={`Pause / Resume (Ctrl+U) • ${streamState.label}`}
           disabled={!commandState.canPauseResume}
           aria-pressed={commandState.isPaused}
-          style={getToolbarControlStyle({
-            disabled: !commandState.canPauseResume,
-            active: commandState.isPaused,
-            tone: commandState.isPaused ? "warning" : "neutral",
-          })}
+          size="small"
+          appearance={commandState.isPaused ? "primary" : "secondary"}
         >
           {commandState.isPaused ? "Resume" : "Pause"}
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={() => {
             refreshActiveSource().catch((error) => {
               console.error("[toolbar] failed to refresh source", { error });
@@ -822,10 +925,14 @@ export function Toolbar() {
           }}
           title="Refresh (F5)"
           disabled={!commandState.canRefresh}
-          style={getToolbarControlStyle({ disabled: !commandState.canRefresh })}
+          size="small"
+          appearance="secondary"
         >
           Refresh
-        </button>
+        </Button>
+        <Badge appearance="outline" color={streamState.label === "Paused" ? "warning" : streamState.label === "Loading" ? "informative" : "brand"}>
+          {streamState.label}
+        </Badge>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flexGrow: 1, minWidth: "250px" }}>
@@ -840,80 +947,80 @@ export function Toolbar() {
           >
             Highlight:
           </label>
-          <input
-            type="text"
+          <Input
             value={highlightText}
             onChange={(e) => setHighlightText(e.target.value)}
             placeholder="Enter text to highlight..."
             disabled={commandState.activeView !== "log"}
+            size="small"
             style={{
               width: "200px",
-              fontSize: "12px",
-              padding: "2px 4px",
-              border: "1px solid #9ca3af",
-              borderRadius: "2px",
-              backgroundColor: commandState.activeView === "log" ? "#ffffff" : "#f3f4f6",
               minWidth: "120px",
             }}
           />
         </div>
 
-        <div style={{ width: "1px", height: "16px", backgroundColor: "#c0c0c0", margin: "0 2px" }} />
+        <Divider vertical />
 
-        <button
+        <Button
+          onClick={showEvidenceBundleDialog}
+          title="Show collected bundle summary"
+          disabled={!commandState.canShowEvidenceBundle}
+          size="small"
+          appearance="secondary"
+        >
+          Bundle Summary
+        </Button>
+        <Button
           onClick={showErrorLookupDialog}
           title="Error Lookup (Ctrl+E)"
-          style={getToolbarControlStyle({ disabled: false })}
+          size="small"
+          appearance="secondary"
         >
           Error Lookup
-        </button>
+        </Button>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-        <button
+        <Button
           onClick={toggleDetailsPane}
           title="Show / Hide Details (Ctrl+H)"
           disabled={!commandState.canToggleDetailsPane}
           aria-pressed={commandState.isDetailsVisible}
-          style={getToolbarControlStyle({
-            disabled: !commandState.canToggleDetailsPane,
-            active: commandState.isDetailsVisible,
-          })}
+          size="small"
+          appearance={commandState.isDetailsVisible ? "primary" : "secondary"}
         >
           Details
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={toggleInfoPane}
           title="Toggle Info Pane"
           disabled={!commandState.canToggleInfoPane}
           aria-pressed={commandState.isInfoPaneVisible}
-          style={getToolbarControlStyle({
-            disabled: !commandState.canToggleInfoPane,
-            active: commandState.isInfoPaneVisible,
-          })}
+          size="small"
+          appearance={commandState.isInfoPaneVisible ? "primary" : "secondary"}
         >
           Info
-        </button>
+        </Button>
 
-        <div style={{ width: "1px", height: "16px", backgroundColor: "#c0c0c0", margin: "0 2px" }} />
+        <Divider vertical />
 
         {([
           ["log", "Log Explorer"],
           ["intune", "Intune Diagnostics"],
+          ["new-intune", "New Intune Workspace"],
           ["dsregcmd", "Troubleshoot with dsregcmd"],
         ] as const).map(([workspaceId, label]) => (
-          <button
+          <Button
             key={workspaceId}
             onClick={() => setActiveView(workspaceId)}
             title={`Switch to ${label}`}
             aria-pressed={activeView === workspaceId}
-            style={getToolbarControlStyle({
-              disabled: false,
-              active: activeView === workspaceId,
-            })}
+            size="small"
+            appearance={activeView === workspaceId ? "primary" : "secondary"}
           >
             {label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

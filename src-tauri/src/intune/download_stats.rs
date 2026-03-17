@@ -4,6 +4,9 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use super::guid_registry::{
+    extract_json_field, setup_file_name, APP_ID_JSON_RE, APP_NAME_JSON_RE, SETUP_FILE_JSON_RE,
+};
 use super::ime_parser::ImeLine;
 use super::models::DownloadStat;
 
@@ -13,19 +16,16 @@ static DOWNLOAD_RE: Lazy<Regex> = Lazy::new(|| {
     )
     .unwrap()
 });
-static DOWNLOAD_IGNORE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)adding\s+new\s+state\s+transition\s*-\s*from:"#).unwrap()
-});
+static DOWNLOAD_IGNORE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)adding\s+new\s+state\s+transition\s*-\s*from:"#).unwrap());
 static SIZE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(?:content\s+)?size[:\s]+([\d.]+)\s*(bytes|kb|mb|gb)"#).unwrap()
 });
 static SPEED_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(?:speed|rate)[:\s]+([\d.]+)\s*(bytes?/s|kb/s|mb/s|bps|kbps|mbps)"#)
-        .unwrap()
+    Regex::new(r#"(?i)(?:speed|rate)[:\s]+([\d.]+)\s*(bytes?/s|kb/s|mb/s|bps|kbps|mbps)"#).unwrap()
 });
-static DO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(?:delivery\s+optimization|DO)[:\s]+([\d.]+)\s*%"#).unwrap()
-});
+static DO_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)(?:delivery\s+optimization|DO)[:\s]+([\d.]+)\s*%"#).unwrap());
 static CONTENT_ID_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(?:content|app|application)\s*(?:id)?[:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"#).unwrap()
 });
@@ -48,29 +48,27 @@ static DOWNLOAD_START_RE: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 static DOWNLOAD_PROGRESS_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(?:bytes\s+downloaded|downloading|download\s+progress|delivery\s+optimization)"#)
-        .unwrap()
+    Regex::new(
+        r#"(?i)(?:bytes\s+downloaded|downloading|download\s+progress|delivery\s+optimization)"#,
+    )
+    .unwrap()
 });
 static DOWNLOAD_STALL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(?:stalled|not\s+progressing|no\s+progress|timed?\s*out|timeout|retry\s+exhausted)"#)
-        .unwrap()
+    Regex::new(
+        r#"(?i)(?:stalled|not\s+progressing|no\s+progress|timed?\s*out|timeout|retry\s+exhausted)"#,
+    )
+    .unwrap()
 });
 static APPWORKLOAD_RETRY_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(?:(?-u:\b)retrying(?-u:\b)|(?-u:\b)reattempt(?:ing)?(?-u:\b)|will\s+retry|retry\s+exhausted|failed[^\r\n]{0,80}retry)"#).unwrap()
 });
 static DURATION_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(?:duration|took|elapsed)[:\s]+([\d.]+)\s*(s(?:ec(?:ond)?s?)?|m(?:in(?:ute)?s?)?)"#)
-        .unwrap()
+    Regex::new(
+        r#"(?i)(?:duration|took|elapsed)[:\s]+([\d.]+)\s*(s(?:ec(?:ond)?s?)?|m(?:in(?:ute)?s?)?)"#,
+    )
+    .unwrap()
 });
-static APP_ID_JSON_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"\"AppId\"\s*:\s*\"([0-9a-fA-F-]{36})\""#).unwrap()
-});
-static APP_NAME_JSON_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"\"ApplicationName\"\s*:\s*\"([^\"]+)\""#).unwrap()
-});
-static SETUP_FILE_JSON_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"\"SetUpFilePath\"\s*:\s*\"([^\"]+)\""#).unwrap()
-});
+// APP_ID_JSON_RE, APP_NAME_JSON_RE, SETUP_FILE_JSON_RE imported from guid_registry
 
 pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadStat> {
     let source_kind = classify_download_source(source_file);
@@ -83,6 +81,8 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
 
     for line in lines {
         let msg = &line.message;
+        let timestamp = line.timestamp_utc.as_deref().or(line.timestamp.as_deref());
+        let timestamp_owned = timestamp.map(|value| value.to_string());
         let Some(analysis) = DownloadLineAnalysis::from_message(msg) else {
             continue;
         };
@@ -99,7 +99,7 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
                 Some(content_id.clone()),
                 display_name.clone(),
                 &analysis,
-                line.timestamp.as_deref(),
+                timestamp,
                 false,
             ) {
                 downloads.push(stat);
@@ -107,7 +107,7 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
 
             active.insert(
                 content_id.clone(),
-                PartialDownload::new(Some(content_id), display_name, line.timestamp.clone()),
+                PartialDownload::new(Some(content_id), display_name, timestamp_owned.clone()),
             );
             continue;
         }
@@ -117,10 +117,10 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
                 PartialDownload::new(
                     Some(content_id.clone()),
                     display_name.clone(),
-                    line.timestamp.clone(),
+                    timestamp_owned.clone(),
                 )
             });
-            apply_download_analysis(entry, &analysis, line.timestamp.as_deref());
+            apply_download_analysis(entry, &analysis, timestamp);
         }
 
         if analysis.is_complete {
@@ -129,7 +129,7 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
                 Some(content_id),
                 display_name,
                 &analysis,
-                line.timestamp.as_deref(),
+                timestamp,
                 true,
             ) {
                 downloads.push(stat);
@@ -143,7 +143,7 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
                 Some(content_id),
                 display_name,
                 &analysis,
-                line.timestamp.as_deref(),
+                timestamp,
                 false,
             ) {
                 downloads.push(stat);
@@ -158,10 +158,9 @@ pub fn extract_downloads(lines: &[ImeLine], source_file: &str) -> Vec<DownloadSt
                     .content_id
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
-                name: partial
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| short_id(partial.content_id.as_deref().unwrap_or("unknown"))),
+                name: partial.display_name.clone().unwrap_or_else(|| {
+                    short_id(partial.content_id.as_deref().unwrap_or("unknown"))
+                }),
                 size_bytes: partial.size_bytes.unwrap_or(0),
                 speed_bps: partial.speed_bps.unwrap_or(0.0),
                 do_percentage: partial.do_percentage.unwrap_or(0.0),
@@ -245,7 +244,11 @@ struct PartialDownload {
 }
 
 impl PartialDownload {
-    fn new(content_id: Option<String>, display_name: Option<String>, start_time: Option<String>) -> Self {
+    fn new(
+        content_id: Option<String>,
+        display_name: Option<String>,
+        start_time: Option<String>,
+    ) -> Self {
         Self {
             content_id,
             display_name,
@@ -308,21 +311,13 @@ fn extract_display_name(msg: &str) -> Option<String> {
     if let Some(value) = extract_json_field(msg, "\"ApplicationName\":\"", "\"") {
         return Some(value.to_string());
     }
-    if let Some(value) = extract_json_field(
-        msg,
-        "\\\"ApplicationName\\\":\\\"",
-        "\\\"",
-    ) {
+    if let Some(value) = extract_json_field(msg, "\\\"ApplicationName\\\":\\\"", "\\\"") {
         return Some(value.to_string());
     }
     if let Some(value) = extract_json_field(msg, "\"SetUpFilePath\":\"", "\"") {
         return Some(setup_file_name(value));
     }
-    if let Some(value) = extract_json_field(
-        msg,
-        "\\\"SetUpFilePath\\\":\\\"",
-        "\\\"",
-    ) {
+    if let Some(value) = extract_json_field(msg, "\\\"SetUpFilePath\\\":\\\"", "\\\"") {
         return Some(setup_file_name(value));
     }
 
@@ -338,20 +333,7 @@ fn extract_display_name(msg: &str) -> Option<String> {
         })
 }
 
-fn extract_json_field<'a>(msg: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
-    let start = msg.find(prefix)? + prefix.len();
-    let remainder = msg.get(start..)?;
-    let end = remainder.find(suffix)?;
-    remainder.get(..end)
-}
-
-fn setup_file_name(path: &str) -> String {
-    Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path)
-        .to_string()
-}
+// extract_json_field and setup_file_name imported from guid_registry
 
 fn apply_download_analysis(
     download: &mut PartialDownload,
@@ -476,11 +458,7 @@ fn finalize_download(
 }
 
 fn short_id(id: &str) -> String {
-    if id.len() > 8 && id.contains('-') {
-        format!("Download ({id}...)", id = &id[..8])
-    } else {
-        format!("Download: {id}")
-    }
+    format!("Download ({id})")
 }
 
 #[cfg(test)]
@@ -493,12 +471,14 @@ mod tests {
             ImeLine {
                 line_number: 1,
                 timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+                timestamp_utc: None,
                 message: "Starting content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
                 component: None,
             },
             ImeLine {
                 line_number: 2,
                 timestamp: Some("01-15-2024 10:00:05.000".to_string()),
+                timestamp_utc: None,
                 message: "Download completed successfully. Content size: 5242880 bytes, speed: 1048576 Bps, Delivery Optimization: 75.5%".to_string(),
                 component: None,
             },
@@ -516,12 +496,14 @@ mod tests {
             ImeLine {
                 line_number: 1,
                 timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+                timestamp_utc: None,
                 message: "Starting content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
                 component: None,
             },
             ImeLine {
                 line_number: 2,
                 timestamp: Some("01-15-2024 10:00:30.000".to_string()),
+                timestamp_utc: None,
                 message: "Content download stalled with no progress for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
                 component: None,
             },
@@ -537,7 +519,9 @@ mod tests {
         let lines = vec![ImeLine {
             line_number: 1,
             timestamp: Some("01-15-2024 10:00:00.000".to_string()),
-            message: "Starting content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
+            timestamp_utc: None,
+            message: "Starting content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                .to_string(),
             component: None,
         }];
 
@@ -551,12 +535,14 @@ mod tests {
             ImeLine {
                 line_number: 1,
                 timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+                timestamp_utc: None,
                 message: "Starting content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
                 component: None,
             },
             ImeLine {
                 line_number: 2,
                 timestamp: Some("01-15-2024 10:00:05.000".to_string()),
+                timestamp_utc: None,
                 message: "Download failed, retrying content download for app id: a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
                 component: None,
             },
@@ -572,6 +558,7 @@ mod tests {
         let lines = vec![ImeLine {
             line_number: 1,
             timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+            timestamp_utc: None,
             message: "Adding new state transition - From: Install In Progress To: Download In Progress With Event: Download Started.".to_string(),
             component: None,
         }];
@@ -585,6 +572,7 @@ mod tests {
         let lines = vec![ImeLine {
             line_number: 1,
             timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+            timestamp_utc: None,
             message: r#"RequestPayload: {\"AppId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"MaxRetries\":3,\"RetryIntervalInMinutes\":5,\"DownloadStartTimeUTC\":\"\\/Date(-62135578800000)\\/\"}"#.to_string(),
             component: None,
         }];
@@ -599,12 +587,14 @@ mod tests {
             ImeLine {
                 line_number: 1,
                 timestamp: Some("01-15-2024 10:00:00.000".to_string()),
+                timestamp_utc: None,
                 message: r#"Starting content download RequestPayload: {\"AppId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"ApplicationName\":\"Contoso App\"}"#.to_string(),
                 component: None,
             },
             ImeLine {
                 line_number: 2,
                 timestamp: Some("01-15-2024 10:00:05.000".to_string()),
+                timestamp_utc: None,
                 message: r#"Download completed successfully RequestPayload: {\"AppId\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"ApplicationName\":\"Contoso App\"}"#.to_string(),
                 component: None,
             },
@@ -612,7 +602,10 @@ mod tests {
 
         let downloads = extract_downloads(&lines, "C:/Logs/AppWorkload.log");
         assert_eq!(downloads.len(), 1);
-        assert_eq!(downloads[0].content_id, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+        assert_eq!(
+            downloads[0].content_id,
+            "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        );
         assert_eq!(downloads[0].name, "Contoso App");
     }
 
@@ -624,6 +617,9 @@ mod tests {
             extract_content_id(message).as_deref(),
             Some("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
         );
-        assert_eq!(extract_display_name(message).as_deref(), Some("Contoso App"));
+        assert_eq!(
+            extract_display_name(message).as_deref(),
+            Some("Contoso App")
+        );
     }
 }

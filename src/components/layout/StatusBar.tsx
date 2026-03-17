@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Badge } from "@fluentui/react-components";
 import {
   getActiveSourceLabel,
   getBaseName,
@@ -13,6 +14,7 @@ import {
 } from "../../stores/filter-store";
 import {
   getUiChromeStatus,
+  isIntuneWorkspace,
   useUiStore,
 } from "../../stores/ui-store";
 import { useIntuneStore } from "../../stores/intune-store";
@@ -39,6 +41,8 @@ export function StatusBar() {
   const parserSelection = useLogStore((s) => s.parserSelection);
   const openFilePath = useLogStore((s) => s.openFilePath);
   const selectedSourceFilePath = useLogStore((s) => s.selectedSourceFilePath);
+  const sourceOpenMode = useLogStore((s) => s.sourceOpenMode);
+  const aggregateFiles = useLogStore((s) => s.aggregateFiles);
   const activeSource = useLogStore((s) => s.activeSource);
   const knownSources = useLogStore((s) => s.knownSources);
   const selectedId = useLogStore((s) => s.selectedId);
@@ -155,7 +159,11 @@ export function StatusBar() {
       uiChromeStatus.viewLabel,
       uiChromeStatus.detailsLabel,
       uiChromeStatus.infoLabel,
-      activeFileName ? `Source ${activeFileName}` : `Source ${activeSourceLabel}`,
+      sourceOpenMode === "aggregate-folder"
+        ? `Source ${aggregateFiles.length} file${aggregateFiles.length === 1 ? "" : "s"}`
+        : activeFileName
+          ? `Source ${activeFileName}`
+          : `Source ${activeSourceLabel}`,
     ];
 
     if (parserDisplay) {
@@ -179,6 +187,9 @@ export function StatusBar() {
         ? [
             positionText ?? `${filteredCount} entries`,
             `${totalLines} lines`,
+            sourceOpenMode === "aggregate-folder"
+              ? `${aggregateFiles.length} files`
+              : null,
             severityText,
             `${formatDetected ?? "Unknown"} format`,
             parserDisplay?.provenanceLabel,
@@ -198,13 +209,13 @@ export function StatusBar() {
       .filter((part) => part.length > 0)
       .join(" | ");
     rightTone = filterStatus.tone === "error" ? "#991b1b" : undefined;
-  } else if (activeView === "intune") {
+  } else if (isIntuneWorkspace(activeView)) {
     const intuneSourceLabel = getBaseName(
       intuneAnalysisState.requestedPath ?? intuneSourceContext.analyzedPath
     );
 
     leftParts = [
-      "Intune Diagnostics",
+      activeView === "new-intune" ? "New Intune Workspace" : "Intune Diagnostics",
       intuneAnalysisState.phase === "analyzing"
         ? "Analyzing"
         : intuneAnalysisState.phase === "error"
@@ -283,28 +294,50 @@ export function StatusBar() {
 
   const leftStatusText = leftParts.join(" • ");
 
+  const activeViewLabel =
+    activeView === "log"
+      ? "Log"
+      : activeView === "intune"
+        ? "Intune"
+        : activeView === "new-intune"
+          ? "New Intune"
+        : "dsregcmd";
+
   return (
     <div
       style={{
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: "2px 8px",
-        backgroundColor: "#f0f0f0",
-        borderTop: "1px solid #c0c0c0",
+        padding: "6px 10px",
+        backgroundColor: "#f8fafc",
+        borderTop: "1px solid #d8e1ec",
         fontSize: "12px",
         fontFamily: "'Segoe UI', Tahoma, sans-serif",
         flexShrink: 0,
-        height: "22px",
+        minHeight: "34px",
         gap: "10px",
       }}
     >
-      <span
-        title={leftStatusText}
-        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      <div
+        style={{
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          overflow: "hidden",
+        }}
       >
-        {leftStatusText}
-      </span>
+        <Badge appearance="outline" color="brand">
+          {activeViewLabel}
+        </Badge>
+        <span
+          title={leftStatusText}
+          style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        >
+          {leftStatusText}
+        </span>
+      </div>
       <span
         title={rightStatusText}
         style={{
@@ -313,6 +346,7 @@ export function StatusBar() {
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
           color: rightTone,
+          fontWeight: 500,
         }}
       >
         {rightStatusText}

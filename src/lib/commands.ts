@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AggregateParseResult,
   FolderListingResult,
   KnownSourceMetadata,
   LogFormat,
   LogSource,
   ParseResult,
 } from "../types/log";
+import type { EvidenceArtifactPreview, EvidenceBundleDetails, EvidenceArtifactIntakeKind } from "../types/evidence";
 import type { IntuneAnalysisResult } from "../types/intune";
 import type {
   DsregcmdAnalysisResult,
@@ -19,16 +21,74 @@ export interface FileAssociationPromptStatus {
   isAssociated: boolean;
 }
 
+export interface SystemDateTimePreferences {
+  datePattern: string;
+  timePattern: string;
+  amDesignator: string | null;
+  pmDesignator: string | null;
+}
+
+export interface AnalyzeIntuneLogsOptions {
+  includeLiveEventLogs?: boolean;
+}
+
+function getInvokeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function normalizeCommandInvokeError(commandName: string, error: unknown): Error {
+  const message = getInvokeErrorMessage(error);
+  const missingCommandPattern = new RegExp(`command\\s+${commandName}\\s+not found`, "i");
+
+  if (missingCommandPattern.test(message)) {
+    return new Error(
+      `The running desktop backend does not expose '${commandName}'. Restart CMTrace Open so the frontend and Tauri backend are on the same build.`
+    );
+  }
+
+  return error instanceof Error ? error : new Error(message);
+}
+
+async function invokeCommand<T>(commandName: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(commandName, args);
+  } catch (error) {
+    throw normalizeCommandInvokeError(commandName, error);
+  }
+}
+
 export async function openLogFile(path: string): Promise<ParseResult> {
-  return invoke<ParseResult>("open_log_file", { path });
+  return invokeCommand<ParseResult>("open_log_file", { path });
 }
 
 export async function listLogFolder(path: string): Promise<FolderListingResult> {
-  return invoke<FolderListingResult>("list_log_folder", { path });
+  return invokeCommand<FolderListingResult>("list_log_folder", { path });
+}
+
+export async function inspectEvidenceBundle(
+  path: string
+): Promise<EvidenceBundleDetails> {
+  return invokeCommand<EvidenceBundleDetails>("inspect_evidence_bundle", { path });
+}
+
+export async function inspectEvidenceArtifact(
+  path: string,
+  intakeKind: EvidenceArtifactIntakeKind,
+  originPath?: string | null
+): Promise<EvidenceArtifactPreview> {
+  return invokeCommand<EvidenceArtifactPreview>("inspect_evidence_artifact", {
+    path,
+    intakeKind,
+    originPath: originPath ?? null,
+  });
 }
 
 export async function getKnownLogSources(): Promise<KnownSourceMetadata[]> {
-  return invoke<KnownSourceMetadata[]>("get_known_log_sources");
+  return invokeCommand<KnownSourceMetadata[]>("get_known_log_sources");
 }
 
 export async function openLogSourceFile(source: LogSource): Promise<ParseResult> {
@@ -61,6 +121,28 @@ export async function listLogSourceFolder(
   );
 }
 
+export async function openLogFolderAggregate(
+  path: string
+): Promise<AggregateParseResult> {
+  return invokeCommand<AggregateParseResult>("open_log_folder_aggregate", { path });
+}
+
+export async function openLogSourceFolderAggregate(
+  source: LogSource
+): Promise<AggregateParseResult> {
+  if (source.kind === "folder") {
+    return openLogFolderAggregate(source.path);
+  }
+
+  if (source.kind === "known" && source.pathKind === "folder") {
+    return openLogFolderAggregate(source.defaultPath);
+  }
+
+  throw new Error(
+    `Source kind '${source.kind}' does not resolve to a folder path.`
+  );
+}
+
 export async function startTail(
   path: string,
   format: LogFormat,
@@ -68,78 +150,88 @@ export async function startTail(
   nextId: number,
   nextLine: number
 ): Promise<void> {
-  return invoke("start_tail", { path, format, byteOffset, nextId, nextLine });
+  return invokeCommand<void>("start_tail", { path, format, byteOffset, nextId, nextLine });
 }
 
 export async function stopTail(path: string): Promise<void> {
-  return invoke("stop_tail", { path });
+  return invokeCommand<void>("stop_tail", { path });
 }
 
 export async function pauseTail(path: string): Promise<void> {
-  return invoke("pause_tail", { path });
+  return invokeCommand<void>("pause_tail", { path });
 }
 
 export async function resumeTail(path: string): Promise<void> {
-  return invoke("resume_tail", { path });
+  return invokeCommand<void>("resume_tail", { path });
 }
 
 export async function analyzeIntuneLogs(
-  path: string
+  path: string,
+  requestId: string,
+  options?: AnalyzeIntuneLogsOptions
 ): Promise<IntuneAnalysisResult> {
-  return invoke<IntuneAnalysisResult>("analyze_intune_logs", { path });
+  return invokeCommand<IntuneAnalysisResult>("analyze_intune_logs", {
+    path,
+    requestId,
+    includeLiveEventLogs: options?.includeLiveEventLogs ?? false,
+  });
 }
 
 export async function analyzeDsregcmd(
   input: string,
   bundlePath?: string | null
 ): Promise<DsregcmdAnalysisResult> {
-  return invoke<DsregcmdAnalysisResult>("analyze_dsregcmd", {
+  return invokeCommand<DsregcmdAnalysisResult>("analyze_dsregcmd", {
     input,
     bundlePath: bundlePath ?? null,
   });
 }
 
 export async function captureDsregcmd(): Promise<DsregcmdCaptureResult> {
-  return invoke<DsregcmdCaptureResult>("capture_dsregcmd");
+  return invokeCommand<DsregcmdCaptureResult>("capture_dsregcmd");
 }
 
 export async function inspectPathKind(
   path: string
 ): Promise<"file" | "folder" | "unknown"> {
-  return invoke<"file" | "folder" | "unknown">("inspect_path_kind", { path });
+  return invokeCommand<"file" | "folder" | "unknown">("inspect_path_kind", { path });
 }
 
 export async function writeTextOutputFile(
   path: string,
   contents: string
 ): Promise<void> {
-  return invoke("write_text_output_file", { path, contents });
+  return invokeCommand<void>("write_text_output_file", { path, contents });
 }
 
 export async function loadDsregcmdSource(
   kind: "file" | "folder",
   path: string
 ): Promise<DsregcmdResolvedSource> {
-  return invoke<DsregcmdResolvedSource>("load_dsregcmd_source", {
+  return invokeCommand<DsregcmdResolvedSource>("load_dsregcmd_source", {
     kind,
     path,
   });
 }
 
 export async function getInitialFilePath(): Promise<string | null> {
-  return invoke<string | null>("get_initial_file_path");
+  return invokeCommand<string | null>("get_initial_file_path");
 }
 
 export async function getFileAssociationPromptStatus(): Promise<FileAssociationPromptStatus> {
-  return invoke<FileAssociationPromptStatus>("get_file_association_prompt_status");
+  return invokeCommand<FileAssociationPromptStatus>("get_file_association_prompt_status");
 }
 
 export async function associateLogFilesWithApp(): Promise<void> {
-  return invoke("associate_log_files_with_app");
+  return invokeCommand<void>("associate_log_files_with_app");
 }
 
 export async function setFileAssociationPromptSuppressed(
   suppressed: boolean
 ): Promise<void> {
-  return invoke("set_file_association_prompt_suppressed", { suppressed });
+  return invokeCommand<void>("set_file_association_prompt_suppressed", { suppressed });
+}
+
+export async function getSystemDateTimePreferences(): Promise<SystemDateTimePreferences> {
+  return invokeCommand<SystemDateTimePreferences>("get_system_date_time_preferences");
 }

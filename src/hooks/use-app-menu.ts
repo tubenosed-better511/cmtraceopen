@@ -23,6 +23,7 @@ export function useAppMenu() {
     showFilterDialog,
     showErrorLookupDialog,
     showAboutDialog,
+    showAccessibilityDialog,
     togglePauseResume,
     refreshActiveSource,
     toggleDetailsPane,
@@ -71,6 +72,9 @@ export function useAppMenu() {
           case "show_about":
             showAboutDialog();
             return;
+          case "show_accessibility_settings":
+            showAccessibilityDialog();
+            return;
           case "load_known_source_preset": {
             await openKnownSourceCatalogAction({
               presetMenuId: payload.preset_id,
@@ -113,6 +117,7 @@ export function useAppMenu() {
     openSourceFileDialog,
     openSourceFolderDialog,
     refreshActiveSource,
+    showAccessibilityDialog,
     showAboutDialog,
     showErrorLookupDialog,
     showFilterDialog,

@@ -1,6 +1,15 @@
 import { create } from "zustand";
+import { parseDisplayDateTimeValue } from "../lib/date-time-format";
+import type { EvidenceBundleMetadata } from "../types/evidence";
+import type {
+  EventLogAnalysis,
+  EventLogChannel,
+  EventLogCorrelationLink,
+  EventLogSeverity,
+} from "../types/event-log";
 import type {
   DownloadStat,
+  IntuneAnalysisProgressEvent,
   IntuneAnalysisSourceKind,
   IntuneAnalysisState,
   IntuneDiagnosticInsight,
@@ -15,6 +24,7 @@ import type {
   IntuneSourceSelection,
   IntuneStatus,
   IntuneSummary,
+  IntuneTimeWindowPreset,
   IntuneTimelineScope,
   IntuneTimestampBounds,
 } from "../types/intune";
@@ -138,9 +148,11 @@ const defaultAnalysisState: IntuneAnalysisState = {
   phase: "idle",
   requestedPath: null,
   requestedKind: null,
+  requestId: null,
   message: "Choose an Intune log file or folder to analyze.",
   detail: null,
   lastError: null,
+  progress: null,
 };
 
 interface IntuneState {
@@ -151,23 +163,31 @@ interface IntuneState {
   diagnosticsCoverage: IntuneDiagnosticsCoverage;
   diagnosticsConfidence: IntuneDiagnosticsConfidence;
   repeatedFailures: IntuneRepeatedFailureGroup[];
+  evidenceBundle: EvidenceBundleMetadata | null;
+  eventLogAnalysis: EventLogAnalysis | null;
   sourceFile: string | null;
   sourceFiles: string[];
   sourceContext: IntuneSourceContext;
   isAnalyzing: boolean;
   analysisState: IntuneAnalysisState;
   selectedEventId: number | null;
+  selectedEventLogEntryId: number | null;
   sourceSelection: IntuneSourceSelection;
   timelineScope: IntuneTimelineScope;
+  timeWindow: IntuneTimeWindowPreset;
   filterEventType: IntuneEventType | "All";
   filterStatus: IntuneStatus | "All";
+  eventLogFilterChannel: EventLogChannel | "All";
+  eventLogFilterSeverity: EventLogSeverity | "All";
   activeTab: IntuneWorkspaceTab;
   resultRevision: number;
 
   beginAnalysis: (
     requestedPath: string | null,
-    requestedKind?: IntuneAnalysisSourceKind
+    requestedKind?: IntuneAnalysisSourceKind,
+    requestId?: string | null
   ) => void;
+  updateAnalysisProgress: (progress: IntuneAnalysisProgressEvent) => void;
   setResults: (
     events: IntuneEvent[],
     downloads: DownloadStat[],
@@ -181,16 +201,24 @@ interface IntuneState {
   selectEvent: (id: number | null) => void;
   setTimelineFileScope: (path: string | null) => void;
   clearTimelineFileScope: () => void;
+  setTimeWindow: (preset: IntuneTimeWindowPreset) => void;
   setFilterEventType: (type_: IntuneEventType | "All") => void;
   setFilterStatus: (status: IntuneStatus | "All") => void;
+  setEventLogFilterChannel: (channel: EventLogChannel | "All") => void;
+  setEventLogFilterSeverity: (severity: EventLogSeverity | "All") => void;
+  selectEventLogEntry: (id: number | null) => void;
   setActiveTab: (tab: IntuneWorkspaceTab) => void;
   clear: () => void;
 }
 
 const defaultInteractionState = {
   selectedEventId: null,
+  selectedEventLogEntryId: null as number | null,
+  timeWindow: "all" as const,
   filterEventType: "All" as const,
   filterStatus: "All" as const,
+  eventLogFilterChannel: "All" as EventLogChannel | "All",
+  eventLogFilterSeverity: "All" as EventLogSeverity | "All",
   activeTab: "timeline" as const,
 };
 
@@ -202,6 +230,8 @@ export const useIntuneStore = create<IntuneState>((set) => ({
   diagnosticsCoverage: emptyDiagnosticsCoverage,
   diagnosticsConfidence: emptyDiagnosticsConfidence,
   repeatedFailures: [],
+  evidenceBundle: null,
+  eventLogAnalysis: null,
   sourceFile: null,
   sourceFiles: [],
   sourceContext: emptySourceContext,
@@ -212,7 +242,7 @@ export const useIntuneStore = create<IntuneState>((set) => ({
   timelineScope: emptyTimelineScope,
   ...defaultInteractionState,
 
-  beginAnalysis: (requestedPath, requestedKind = "unknown") =>
+  beginAnalysis: (requestedPath, requestedKind = "unknown", requestId = null) =>
     set({
       events: [],
       downloads: [],
@@ -221,6 +251,8 @@ export const useIntuneStore = create<IntuneState>((set) => ({
       diagnosticsCoverage: emptyDiagnosticsCoverage,
       diagnosticsConfidence: emptyDiagnosticsConfidence,
       repeatedFailures: [],
+      evidenceBundle: null,
+      eventLogAnalysis: null,
       sourceFile: null,
       sourceFiles: [],
       sourceContext: emptySourceContext,
@@ -229,16 +261,47 @@ export const useIntuneStore = create<IntuneState>((set) => ({
         phase: "analyzing",
         requestedPath,
         requestedKind,
+        requestId,
         message:
           requestedKind === "folder"
             ? "Analyzing Intune folder..."
             : "Analyzing Intune log source...",
         detail: requestedPath,
         lastError: null,
+        progress: null,
       },
       sourceSelection: buildSourceSelection(null),
       timelineScope: emptyTimelineScope,
       ...defaultInteractionState,
+    }),
+
+  updateAnalysisProgress: (progress) =>
+    set((state) => {
+      if (state.analysisState.phase !== "analyzing") {
+        return state;
+      }
+
+      if (
+        state.analysisState.requestId != null &&
+        state.analysisState.requestId !== progress.requestId
+      ) {
+        return state;
+      }
+
+      return {
+        analysisState: {
+          ...state.analysisState,
+          requestId: progress.requestId,
+          message: progress.message,
+          detail: progress.detail,
+          progress: {
+            stage: progress.stage,
+            currentFile: progress.currentFile,
+            completedFiles: progress.completedFiles,
+            totalFiles: progress.totalFiles,
+          },
+        },
+      };
     }),
 
   setResults: (events, downloads, summary, diagnostics, sourceFile, sourceFiles, metadata) =>
@@ -262,6 +325,8 @@ export const useIntuneStore = create<IntuneState>((set) => ({
         diagnosticsCoverage: resultMetadata.diagnosticsCoverage,
         diagnosticsConfidence: resultMetadata.diagnosticsConfidence,
         repeatedFailures: resultMetadata.repeatedFailures,
+        evidenceBundle: metadata?.evidenceBundle ?? null,
+        eventLogAnalysis: metadata?.eventLogAnalysis ?? null,
         sourceFile,
         sourceFiles,
         sourceContext,
@@ -270,12 +335,14 @@ export const useIntuneStore = create<IntuneState>((set) => ({
           phase: "ready",
           requestedPath: state.analysisState.requestedPath ?? sourceFile,
           requestedKind,
+          requestId: null,
           message:
             sourceFiles.length > 1
               ? `Analysis complete (${sourceFiles.length} files)`
               : "Analysis complete",
           detail: sourceFile,
           lastError: null,
+          progress: null,
         },
         resultRevision: state.resultRevision + 1,
         sourceSelection: buildSourceSelection(null),
@@ -296,7 +363,9 @@ export const useIntuneStore = create<IntuneState>((set) => ({
         analysisState: {
           requestedPath: state.analysisState.requestedPath,
           requestedKind: state.analysisState.requestedKind,
+          requestId: null,
           ...failureState,
+          progress: null,
         },
       };
     }),
@@ -354,8 +423,12 @@ export const useIntuneStore = create<IntuneState>((set) => ({
       };
     }),
 
+  setTimeWindow: (preset) => set({ timeWindow: preset }),
   setFilterEventType: (type_) => set({ filterEventType: type_ }),
   setFilterStatus: (status) => set({ filterStatus: status }),
+  setEventLogFilterChannel: (channel) => set({ eventLogFilterChannel: channel }),
+  setEventLogFilterSeverity: (severity) => set({ eventLogFilterSeverity: severity }),
+  selectEventLogEntry: (id) => set({ selectedEventLogEntryId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   clear: () =>
@@ -367,6 +440,8 @@ export const useIntuneStore = create<IntuneState>((set) => ({
       diagnosticsCoverage: emptyDiagnosticsCoverage,
       diagnosticsConfidence: emptyDiagnosticsConfidence,
       repeatedFailures: [],
+      evidenceBundle: null,
+      eventLogAnalysis: null,
       sourceFile: null,
       sourceFiles: [],
       sourceContext: emptySourceContext,
@@ -916,9 +991,9 @@ function pickEarlierTimestamp(current: string | null, candidate: string): string
   if (!current) {
     return candidate;
   }
-  const currentValue = Date.parse(current);
-  const candidateValue = Date.parse(candidate);
-  if (Number.isNaN(currentValue) || Number.isNaN(candidateValue)) {
+  const currentValue = parseDisplayDateTimeValue(current);
+  const candidateValue = parseDisplayDateTimeValue(candidate);
+  if (currentValue == null || candidateValue == null) {
     return candidate.localeCompare(current) < 0 ? candidate : current;
   }
   return candidateValue < currentValue ? candidate : current;
@@ -928,9 +1003,9 @@ function pickLaterTimestamp(current: string | null, candidate: string): string {
   if (!current) {
     return candidate;
   }
-  const currentValue = Date.parse(current);
-  const candidateValue = Date.parse(candidate);
-  if (Number.isNaN(currentValue) || Number.isNaN(candidateValue)) {
+  const currentValue = parseDisplayDateTimeValue(current);
+  const candidateValue = parseDisplayDateTimeValue(candidate);
+  if (currentValue == null || candidateValue == null) {
     return candidate.localeCompare(current) > 0 ? candidate : current;
   }
   return candidateValue > currentValue ? candidate : current;
@@ -944,4 +1019,36 @@ function getFileName(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const segments = normalized.split("/");
   return segments[segments.length - 1] || path;
+}
+
+// ---------------------------------------------------------------------------
+// Event log correlation helpers (exported for use by UI components)
+// ---------------------------------------------------------------------------
+
+/** Get all event log entry IDs correlated with a specific IME event. */
+export function getEventLogEntryIdsForIntuneEvent(
+  intuneEventId: number,
+  links: EventLogCorrelationLink[]
+): number[] {
+  return links
+    .filter((l) => l.linkedIntuneEventId === intuneEventId)
+    .map((l) => l.eventLogEntryId);
+}
+
+/** Get all event log entry IDs correlated with a specific diagnostic. */
+export function getEventLogEntryIdsForDiagnostic(
+  diagnosticId: string,
+  links: EventLogCorrelationLink[]
+): number[] {
+  return links
+    .filter((l) => l.linkedDiagnosticId === diagnosticId)
+    .map((l) => l.eventLogEntryId);
+}
+
+/** Get all correlation links that reference a specific event log entry. */
+export function getCorrelationLinksForEntry(
+  entryId: number,
+  links: EventLogCorrelationLink[]
+): EventLogCorrelationLink[] {
+  return links.filter((l) => l.eventLogEntryId === entryId);
 }

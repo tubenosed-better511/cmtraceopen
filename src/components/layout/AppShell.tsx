@@ -9,8 +9,11 @@ import { FindDialog } from "../dialogs/FindDialog";
 import { FilterDialog } from "../dialogs/FilterDialog";
 import { ErrorLookupDialog } from "../dialogs/ErrorLookupDialog";
 import { AboutDialog } from "../dialogs/AboutDialog";
+import { AccessibilityDialog } from "../dialogs/AccessibilityDialog";
+import { EvidenceBundleDialog } from "../dialogs/EvidenceBundleDialog";
 import { FileAssociationPromptDialog } from "../dialogs/FileAssociationPromptDialog";
 import { IntuneDashboard } from "../intune/IntuneDashboard";
+import { NewIntuneWorkspace } from "../intune/NewIntuneWorkspace";
 import { DsregcmdWorkspace } from "../dsregcmd/DsregcmdWorkspace";
 import type { FilterClause } from "../dialogs/FilterDialog";
 import type { LogEntry } from "../../types/log";
@@ -18,6 +21,7 @@ import { useUiStore } from "../../stores/ui-store";
 import { useLogStore } from "../../stores/log-store";
 import { useFilterStore } from "../../stores/filter-store";
 import { useFileWatcher } from "../../hooks/use-file-watcher";
+import { useIntuneAnalysisProgress } from "../../hooks/use-intune-analysis-progress";
 import { useKeyboard } from "../../hooks/use-keyboard";
 import { useDragDrop } from "../../hooks/use-drag-drop";
 import { useFileAssociation } from "../../hooks/use-file-association";
@@ -41,6 +45,12 @@ export function AppShell() {
   const showFilterDialog = useUiStore((s) => s.showFilterDialog);
   const showErrorLookupDialog = useUiStore((s) => s.showErrorLookupDialog);
   const showAboutDialog = useUiStore((s) => s.showAboutDialog);
+  const showAccessibilityDialog = useUiStore(
+    (s) => s.showAccessibilityDialog
+  );
+  const showEvidenceBundleDialog = useUiStore(
+    (s) => s.showEvidenceBundleDialog
+  );
   const showFileAssociationPrompt = useUiStore(
     (s) => s.showFileAssociationPrompt
   );
@@ -50,6 +60,12 @@ export function AppShell() {
     (s) => s.setShowErrorLookupDialog
   );
   const setShowAboutDialog = useUiStore((s) => s.setShowAboutDialog);
+  const setShowAccessibilityDialog = useUiStore(
+    (s) => s.setShowAccessibilityDialog
+  );
+  const setShowEvidenceBundleDialog = useUiStore(
+    (s) => s.setShowEvidenceBundleDialog
+  );
   const setShowFileAssociationPrompt = useUiStore(
     (s) => s.setShowFileAssociationPrompt
   );
@@ -153,6 +169,7 @@ export function AppShell() {
   }, [entries, filterClauses, runFilter, setFilteredIds, setIsFiltering]);
 
   useFileWatcher();
+  useIntuneAnalysisProgress();
   useKeyboard();
   useDragDrop();
   // Handle file path passed via OS file association at startup
@@ -204,6 +221,14 @@ export function AppShell() {
       );
     }
 
+    if (activeView === "new-intune") {
+      return (
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <NewIntuneWorkspace />
+        </div>
+      );
+    }
+
     return (
       <div style={{ flex: 1, overflow: "hidden" }}>
         <DsregcmdWorkspace />
@@ -218,7 +243,7 @@ export function AppShell() {
         flexDirection: "column",
         height: "100vh",
         overflow: "hidden",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#f4f7fb",
       }}
     >
       <Toolbar />
@@ -228,6 +253,7 @@ export function AppShell() {
           flex: 1,
           display: "flex",
           overflow: "hidden",
+          backgroundColor: "#eef3f8",
         }}
       >
         <FileSidebar width={FILE_SIDEBAR_RECOMMENDED_WIDTH} activeView={activeView} />
@@ -238,6 +264,7 @@ export function AppShell() {
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            backgroundColor: "#ffffff",
           }}
         >
           {renderWorkspace()}
@@ -263,6 +290,14 @@ export function AppShell() {
       <AboutDialog
         isOpen={showAboutDialog}
         onClose={() => setShowAboutDialog(false)}
+      />
+      <AccessibilityDialog
+        isOpen={showAccessibilityDialog}
+        onClose={() => setShowAccessibilityDialog(false)}
+      />
+      <EvidenceBundleDialog
+        isOpen={showEvidenceBundleDialog}
+        onClose={() => setShowEvidenceBundleDialog(false)}
       />
       <FileAssociationPromptDialog
         isOpen={showFileAssociationPrompt}

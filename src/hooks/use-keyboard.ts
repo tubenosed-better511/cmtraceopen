@@ -4,6 +4,7 @@ import { useLogStore } from "../stores/log-store";
 import { useUiStore } from "../stores/ui-store";
 import { useFilterStore } from "../stores/filter-store";
 import { useAppActions } from "../components/layout/Toolbar";
+import { formatLogEntryTimestamp } from "../lib/date-time-format";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -103,12 +104,19 @@ function navigateSelection(key: string): boolean {
  *   F5      → Refresh
  */
 export function useKeyboard() {
+  const activeView = useUiStore((state) => state.activeView);
   const showFindDialogOpen = useUiStore((state) => state.showFindDialog);
   const showFilterDialogOpen = useUiStore((state) => state.showFilterDialog);
   const showErrorLookupDialogOpen = useUiStore(
     (state) => state.showErrorLookupDialog
   );
   const showAboutDialogOpen = useUiStore((state) => state.showAboutDialog);
+  const showAccessibilityDialogOpen = useUiStore(
+    (state) => state.showAccessibilityDialog
+  );
+  const showEvidenceBundleDialogOpen = useUiStore(
+    (state) => state.showEvidenceBundleDialog
+  );
   const showFileAssociationPromptOpen = useUiStore(
     (state) => state.showFileAssociationPrompt
   );
@@ -117,6 +125,9 @@ export function useKeyboard() {
     showFindDialog,
     showFilterDialog,
     showErrorLookupDialog,
+    increaseLogListTextSize,
+    decreaseLogListTextSize,
+    resetLogListTextSize,
     togglePauseResume,
     refreshActiveSource,
     toggleDetailsPane,
@@ -132,7 +143,31 @@ export function useKeyboard() {
         showFilterDialogOpen ||
         showErrorLookupDialogOpen ||
         showAboutDialogOpen ||
+        showAccessibilityDialogOpen ||
+        showEvidenceBundleDialogOpen ||
         showFileAssociationPromptOpen;
+
+      if (ctrl && !isInput && activeView === "log") {
+        const normalizedKey = event.key.toLowerCase();
+
+        if (normalizedKey === "=" || event.key === "+") {
+          event.preventDefault();
+          increaseLogListTextSize();
+          return;
+        }
+
+        if (normalizedKey === "-") {
+          event.preventDefault();
+          decreaseLogListTextSize();
+          return;
+        }
+
+        if (normalizedKey === "0") {
+          event.preventDefault();
+          resetLogListTextSize();
+          return;
+        }
+      }
 
       if (ctrl && event.key.toLowerCase() === "o") {
         event.preventDefault();
@@ -224,7 +259,7 @@ export function useKeyboard() {
         const text = [
           entry.message,
           entry.component ?? "",
-          entry.timestampDisplay ?? "",
+          formatLogEntryTimestamp(entry) ?? "",
           entry.threadDisplay ?? "",
         ].join("\t");
 
@@ -255,9 +290,15 @@ export function useKeyboard() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    activeView,
+    decreaseLogListTextSize,
     dismissTransientDialogs,
+    increaseLogListTextSize,
     openSourceFileDialog,
     refreshActiveSource,
+    resetLogListTextSize,
+    showEvidenceBundleDialogOpen,
+    showAccessibilityDialogOpen,
     showAboutDialogOpen,
     showErrorLookupDialog,
     showErrorLookupDialogOpen,
