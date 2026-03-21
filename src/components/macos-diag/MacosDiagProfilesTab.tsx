@@ -11,7 +11,7 @@ import { useMacosDiagStore } from "../../stores/macos-diag-store";
 import { useUiStore } from "../../stores/ui-store";
 import { macosListProfiles } from "../../lib/commands";
 import { getLogListMetrics } from "../../lib/log-accessibility";
-import { deriveFriendlyName, parsePayloadData } from "../../lib/profile-utils";
+import { deriveFriendlyName, parsePayloadData, getPayloadTypeInfo } from "../../lib/profile-utils";
 
 const useStyles = makeStyles({
   enrollmentCard: {
@@ -296,6 +296,20 @@ const useStyles = makeStyles({
   arrayValue: {
     color: tokens.colorBrandForeground1,
   },
+  settingDesc: {
+    display: "block",
+    fontSize: "10px",
+    color: tokens.colorNeutralForeground3,
+    fontFamily: tokens.fontFamilyBase,
+    fontStyle: "italic" as const,
+    marginTop: "1px",
+  },
+  payloadTypeInfo: {
+    fontSize: "11px",
+    color: tokens.colorNeutralForeground3,
+    fontStyle: "italic" as const,
+    ...shorthands.padding("4px", "12px", "8px"),
+  },
   centered: {
     display: "flex",
     justifyContent: "center",
@@ -534,7 +548,7 @@ export function MacosDiagProfilesTab() {
                         <div key={payload.payloadIdentifier} className={styles.payloadCard}>
                           <div className={styles.payloadHeader}>
                             <span className={styles.payloadName} style={{ fontSize: metrics.fontSize }}>
-                              {payload.payloadDisplayName ?? payload.payloadType}
+                              {getPayloadTypeInfo(payload.payloadType)?.friendlyName ?? payload.payloadDisplayName ?? payload.payloadType}
                             </span>
                             <span className={styles.payloadType}>
                               {payload.payloadType}
@@ -543,6 +557,14 @@ export function MacosDiagProfilesTab() {
                           <div className={styles.payloadId} style={{ fontSize: metrics.fontSize - 2 }}>
                             {payload.payloadIdentifier}
                           </div>
+                          {(() => {
+                            const typeInfo = getPayloadTypeInfo(payload.payloadType);
+                            return typeInfo ? (
+                              <div className={styles.payloadTypeInfo} style={{ fontSize: metrics.fontSize - 2 }}>
+                                {typeInfo.description}
+                              </div>
+                            ) : null;
+                          })()}
                           {payload.payloadData && (() => {
                             const parsed = parsePayloadData(payload.payloadData);
                             if (parsed.entries.length === 0) {
@@ -572,7 +594,12 @@ export function MacosDiagProfilesTab() {
                                   <tbody>
                                     {parsed.entries.map((entry) => (
                                       <tr key={entry.key} className={styles.settingsRow}>
-                                        <td className={styles.settingKey} style={{ fontSize: metrics.fontSize - 1 }}>{entry.key}</td>
+                                        <td className={styles.settingKey} style={{ fontSize: metrics.fontSize - 1 }}>
+                                          {entry.key}
+                                          {entry.description && (
+                                            <span className={styles.settingDesc}>{entry.description}</span>
+                                          )}
+                                        </td>
                                         <td className={styles.settingValue} style={{ fontSize: metrics.fontSize - 1 }}>
                                           {entry.type === "boolean" ? (
                                             <span className={entry.value === "1" ? styles.boolTrue : styles.boolFalse}>
