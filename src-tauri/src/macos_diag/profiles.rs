@@ -1,6 +1,6 @@
-use super::models::{
-    MacosEnrollmentStatus, MacosMdmPayload, MacosMdmProfile, MacosProfilesResult,
-};
+use super::models::{MacosEnrollmentStatus, MacosProfilesResult};
+#[cfg(any(target_os = "macos", test))]
+use super::models::{MacosMdmPayload, MacosMdmProfile};
 
 // ---------------------------------------------------------------------------
 // Parsing helpers (cross-platform, always compiled, fully testable)
