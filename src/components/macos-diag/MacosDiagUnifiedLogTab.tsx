@@ -354,7 +354,7 @@ export function MacosDiagUnifiedLogTab() {
     if (!hideNoise) return rawEntries;
     return rawEntries.filter((e) => {
       const s = simplifyMessage(e.message, e.process);
-      return !s || s.category !== "network-noise";
+      return !s || s.category !== "noise";
     });
   }, [rawEntries, hideNoise]);
 
@@ -433,7 +433,7 @@ export function MacosDiagUnifiedLogTab() {
             checked={hideNoise}
             onChange={(e) => setHideNoise(e.target.checked)}
           />
-          Hide network noise
+          Hide NSURLSession noise
         </label>
 
         <Button

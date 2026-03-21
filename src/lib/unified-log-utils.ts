@@ -1,13 +1,17 @@
 /**
  * Simplifies verbose macOS unified log messages into scannable summaries,
  * and categorizes them for filtering/visual badges.
+ *
+ * The Intune Agent preset captures IntuneMdmDaemon/Agent/CompanyPortal logs.
+ * These are dominated by NSURLSession task lifecycle noise. Per HTTP
+ * transaction there are ~10 log lines but only the summary line is useful.
+ * This module classifies each message so the UI can filter noise by default.
  */
 
 export type LogCategory =
-  | "network-noise" // path:satisfied_change, connection state — very noisy
-  | "http"          // sent request, received response, task summary
-  | "task"          // task resuming, finished, connection reused
-  | "info";         // everything else
+  | "noise"    // network path events, task lifecycle, connection state — hide by default
+  | "http"     // task summary with stats — the only useful HTTP line per transaction
+  | "app";     // actual application-level messages (not NSURLSession)
 
 export interface SimplifiedMessage {
   summary: string;
@@ -35,7 +39,7 @@ function formatBytes(bytes: number): string {
 
 /**
  * Simplify a unified log message into a scannable summary + category.
- * Returns null if no simplification is possible (show raw message).
+ * Returns null if no simplification is possible (show raw message as "app").
  */
 export function simplifyMessage(
   message: string,
@@ -52,95 +56,126 @@ export function simplifyMessage(
 
   const msg = message.trim();
 
-  // --- Network noise: path:satisfied_change events ---
-  if (msg.includes("event: path:satisfied_change")) {
-    return { summary: "Network path change", category: "network-noise" };
-  }
-  if (msg.includes("event: path:unsatisfied")) {
-    return { summary: "Network path lost", category: "network-noise" };
+  // ==========================================================================
+  // NOISE: All of these are hidden by default. They're NSURLSession lifecycle
+  // events that occur ~10x per HTTP transaction with zero diagnostic value.
+  // ==========================================================================
+
+  // Network path events (the noisiest — dozens per second)
+  if (msg.includes("event: path:satisfied_change") ||
+      msg.includes("event: path:unsatisfied") ||
+      msg.includes("event: path:satisfied")) {
+    return { summary: "Network path change", category: "noise" };
   }
 
-  // --- Connection events ---
+  // Connection events
   if (msg.includes("event: client:connection_reused")) {
-    return { summary: "Connection reused", category: "task" };
+    return { summary: "Connection reused", category: "noise" };
   }
   if (msg.includes("event: client:connection_idle")) {
-    return { summary: "Connection idle", category: "task" };
+    return { summary: "Connection idle", category: "noise" };
   }
 
-  // --- Task lifecycle ---
-  const taskResuming = msg.match(
-    /Task <([A-F0-9-]+)>\.\d+ resuming/i,
-  );
-  if (taskResuming) {
-    const taskId = taskResuming[1].slice(0, 8);
-    return { summary: `Task ${taskId}… starting`, category: "task" };
+  // Task lifecycle: resuming
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ resuming/i)) {
+    return { summary: "Task starting", category: "noise" };
   }
 
-  const taskConnection = msg.match(
-    /Task <([A-F0-9-]+)>\.\d+ now using Connection (\d+)/i,
-  );
-  if (taskConnection) {
-    return {
-      summary: `Using connection ${taskConnection[2]}`,
-      category: "task",
-    };
+  // Task lifecycle: using connection
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ now using Connection/i)) {
+    return { summary: "Using connection", category: "noise" };
   }
 
-  // --- HTTP: sent request ---
-  const sentReq = msg.match(
-    /Task <([A-F0-9-]+)>\.\d+ sent request, body \w+ (\d+)/i,
-  );
-  if (sentReq) {
-    const bytes = parseInt(sentReq[2], 10);
-    return {
-      summary: `Sent request (${formatBytes(bytes)})`,
-      category: "http",
-    };
+  // Task lifecycle: sent request (noise — the summary has the same info with more detail)
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ sent request/i)) {
+    return { summary: "Sent request", category: "noise" };
   }
 
-  // --- HTTP: received response ---
-  const recvResp = msg.match(
-    /Task <([A-F0-9-]+)>\.\d+ received response, status (\d+)/i,
-  );
-  if (recvResp) {
-    const status = recvResp[2];
-    const ok = status.startsWith("2") ? "OK" : status.startsWith("3") ? "Redirect" : "Error";
-    return {
-      summary: `Response ${status} ${ok}`,
-      category: "http",
-    };
+  // Task lifecycle: received response (noise — the summary has status + timing)
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ received response/i)) {
+    return { summary: "Received response", category: "noise" };
   }
 
-  // --- HTTP: task summary ---
+  // Task lifecycle: done using connection
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ done using Connection/i)) {
+    return { summary: "Connection released", category: "noise" };
+  }
+
+  // Task lifecycle: response ended
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ response ended/i)) {
+    return { summary: "Response complete", category: "noise" };
+  }
+
+  // Task lifecycle: finished
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ finished successfully/i)) {
+    return { summary: "Task completed", category: "noise" };
+  }
+
+  // ==========================================================================
+  // HTTP: Task summary — the ONE useful line per HTTP transaction.
+  // Shows status, timing, bytes, and cache hit in one line.
+  // ==========================================================================
+
   const taskSummary = msg.match(
     /Task <([A-F0-9-]+)>\.\d+ summary for task (success|failure)\s*(\{[^}]+\})/i,
   );
   if (taskSummary) {
-    const status = taskSummary[2];
+    const outcome = taskSummary[2];
     const stats = parseTaskSummary(taskSummary[3]);
     const parts: string[] = [];
-    if (stats.response_status) parts.push(`${stats.response_status}`);
-    if (stats.transaction_duration_ms) parts.push(`${stats.transaction_duration_ms}ms`);
-    if (stats.request_bytes) parts.push(`sent ${formatBytes(parseInt(stats.request_bytes, 10))}`);
-    if (stats.response_bytes) parts.push(`recv ${formatBytes(parseInt(stats.response_bytes, 10))}`);
-    const icon = status === "success" ? "OK" : "FAIL";
+
+    // Status code
+    const statusCode = stats.response_status ?? "???";
+    const statusLabel = statusCode.startsWith("2")
+      ? "OK"
+      : statusCode.startsWith("3")
+        ? "Redirect"
+        : statusCode.startsWith("4")
+          ? "Client Error"
+          : statusCode.startsWith("5")
+            ? "Server Error"
+            : "";
+
+    parts.push(`${statusCode} ${statusLabel}`);
+
+    // Timing
+    if (stats.transaction_duration_ms) {
+      parts.push(`${stats.transaction_duration_ms}ms`);
+    }
+
+    // Bytes
+    if (stats.request_bytes) {
+      parts.push(`sent ${formatBytes(parseInt(stats.request_bytes, 10))}`);
+    }
+    if (stats.response_bytes) {
+      parts.push(`recv ${formatBytes(parseInt(stats.response_bytes, 10))}`);
+    }
+
+    // Cache
+    if (stats.cache_hit === "true") {
+      parts.push("cached");
+    }
+
+    // Connection reuse
+    if (stats.reused === "1" && stats.reused_after_ms) {
+      const reusedSec = (parseInt(stats.reused_after_ms, 10) / 1000).toFixed(0);
+      parts.push(`reused after ${reusedSec}s`);
+    }
+
+    const icon = outcome === "success" ? "MDM Request" : "MDM Request FAILED";
     return {
-      summary: `${icon}: ${parts.join(", ")}`,
+      summary: `${icon}: ${parts.join(" · ")}`,
       category: "http",
     };
   }
 
-  // --- Task finished ---
-  if (msg.match(/Task <[A-F0-9-]+>\.\d+ finished successfully/i)) {
-    return { summary: "Task completed", category: "task" };
-  }
-  if (msg.match(/Task <[A-F0-9-]+>\.\d+ response ended/i)) {
-    return { summary: "Response complete", category: "task" };
-  }
-  if (msg.match(/Task <[A-F0-9-]+>\.\d+ done using Connection/i)) {
-    return { summary: "Connection released", category: "task" };
+  // Task failure without summary block
+  if (msg.match(/Task <[A-F0-9-]+>\.\d+ summary for task failure/i)) {
+    return { summary: "MDM Request FAILED", category: "http" };
   }
 
+  // ==========================================================================
+  // Everything else is an actual application-level message — always show it.
+  // ==========================================================================
   return null;
 }
