@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import {
   Body1,
   Button,
@@ -354,43 +354,82 @@ export function MacosDiagPackagesTab() {
             </tr>
           </thead>
           <tbody>
-            {packages.map((pkg) => (
-              <tr
-                key={pkg.packageId}
-                className={
-                  selectedPackageId === pkg.packageId ? styles.trSelected : ""
-                }
-                style={{ height: metrics.rowHeight }}
-              >
-                <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
-                  {getPackageFriendlyName(pkg.packageId) ? (
-                    <>
-                      <div style={{ fontWeight: 600 }}>{getPackageFriendlyName(pkg.packageId)}</div>
-                      <div style={{ fontSize: metrics.fontSize - 2, color: tokens.colorNeutralForeground3, fontFamily: tokens.fontFamilyMonospace }}>{pkg.packageId}</div>
-                    </>
-                  ) : (
-                    <span style={{ fontFamily: tokens.fontFamilyMonospace }}>{pkg.packageId}</span>
-                  )}
-                </td>
-                <td className={styles.td} style={{ fontSize: metrics.fontSize }}>{pkg.version}</td>
-                <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
-                  {formatInstallTime(pkg.installTime)}
-                </td>
-                <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
-                  <Button
-                    size="small"
-                    appearance={
-                      selectedPackageId === pkg.packageId
-                        ? "primary"
-                        : "subtle"
-                    }
-                    onClick={() => handleDetails(pkg.packageId)}
+            {packages.map((pkg) => {
+              const isSelected = selectedPackageId === pkg.packageId;
+              return (
+                <React.Fragment key={pkg.packageId}>
+                  <tr
+                    className={isSelected ? styles.trSelected : ""}
+                    style={{ height: metrics.rowHeight }}
                   >
-                    Details
-                  </Button>
-                </td>
-              </tr>
-            ))}
+                    <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
+                      {getPackageFriendlyName(pkg.packageId) ? (
+                        <>
+                          <div style={{ fontWeight: 600 }}>{getPackageFriendlyName(pkg.packageId)}</div>
+                          <div style={{ fontSize: metrics.fontSize - 2, color: tokens.colorNeutralForeground3, fontFamily: tokens.fontFamilyMonospace }}>{pkg.packageId}</div>
+                        </>
+                      ) : (
+                        <span style={{ fontFamily: tokens.fontFamilyMonospace }}>{pkg.packageId}</span>
+                      )}
+                    </td>
+                    <td className={styles.td} style={{ fontSize: metrics.fontSize }}>{pkg.version}</td>
+                    <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
+                      {formatInstallTime(pkg.installTime)}
+                    </td>
+                    <td className={styles.td} style={{ fontSize: metrics.fontSize }}>
+                      <Button
+                        size="small"
+                        appearance={isSelected ? "primary" : "subtle"}
+                        onClick={() => handleDetails(pkg.packageId)}
+                      >
+                        {isSelected ? "Close" : "Details"}
+                      </Button>
+                    </td>
+                  </tr>
+                  {isSelected && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 0 }}>
+                        <div className={styles.packageDetail}>
+                          {packageDrillLoading && (
+                            <div className={styles.centered}>
+                              <Spinner size="small" label="Loading package details..." />
+                            </div>
+                          )}
+                          {!packageDrillLoading && selectedPackageInfo && (
+                            <>
+                              <div className={styles.pkgDetailGrid}>
+                                <div className={styles.pkgDetailItem}>
+                                  <div className={styles.pkgDetailLabel}>Version</div>
+                                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>{selectedPackageInfo.version}</div>
+                                </div>
+                                <div className={styles.pkgDetailItem}>
+                                  <div className={styles.pkgDetailLabel}>Volume</div>
+                                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>{selectedPackageInfo.volume ?? "/"}</div>
+                                </div>
+                                <div className={styles.pkgDetailItem}>
+                                  <div className={styles.pkgDetailLabel}>Location</div>
+                                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>{selectedPackageInfo.location ?? "--"}</div>
+                                </div>
+                                <div className={styles.pkgDetailItem}>
+                                  <div className={styles.pkgDetailLabel}>Install Time</div>
+                                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>{formatInstallTime(selectedPackageInfo.installTime)}</div>
+                                </div>
+                              </div>
+                              {selectedPackageFiles && (
+                                <>
+                                  <div className={styles.fileListLabel}>Installed Files ({selectedPackageFiles.fileCount})</div>
+                                  <div className={styles.fileList} style={{ fontSize: metrics.fontSize - 2 }}>{selectedPackageFiles.files.join("\n")}</div>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
             {packages.length === 0 && (
               <tr>
                 <td
@@ -406,69 +445,7 @@ export function MacosDiagPackagesTab() {
         </table>
       </div>
 
-      {/* Package Detail Panel */}
-      {selectedPackageId && (
-        <div className={styles.packageDetail}>
-          <div className={styles.pkgDetailHeader}>
-            <div className={styles.pkgDetailTitle}>{selectedPackageId}</div>
-            <Button
-              size="small"
-              appearance="subtle"
-              onClick={() => setSelectedPackageId(null)}
-            >
-              Close
-            </Button>
-          </div>
-
-          {packageDrillLoading && (
-            <div className={styles.centered}>
-              <Spinner size="small" label="Loading package details..." />
-            </div>
-          )}
-
-          {!packageDrillLoading && selectedPackageInfo && (
-            <>
-              <div className={styles.pkgDetailGrid}>
-                <div className={styles.pkgDetailItem}>
-                  <div className={styles.pkgDetailLabel}>Version</div>
-                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>
-                    {selectedPackageInfo.version}
-                  </div>
-                </div>
-                <div className={styles.pkgDetailItem}>
-                  <div className={styles.pkgDetailLabel}>Volume</div>
-                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>
-                    {selectedPackageInfo.volume ?? "/"}
-                  </div>
-                </div>
-                <div className={styles.pkgDetailItem}>
-                  <div className={styles.pkgDetailLabel}>Location</div>
-                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>
-                    {selectedPackageInfo.location ?? "--"}
-                  </div>
-                </div>
-                <div className={styles.pkgDetailItem}>
-                  <div className={styles.pkgDetailLabel}>Install Time</div>
-                  <div className={styles.pkgDetailValue} style={{ fontSize: metrics.fontSize }}>
-                    {selectedPackageInfo.installTime ?? "--"}
-                  </div>
-                </div>
-              </div>
-
-              {selectedPackageFiles && (
-                <>
-                  <div className={styles.fileListLabel}>
-                    Installed Files ({selectedPackageFiles.fileCount})
-                  </div>
-                  <div className={styles.fileList} style={{ fontSize: metrics.fontSize - 2 }}>
-                    {selectedPackageFiles.files.join("\n")}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* Detail panel is now rendered inline in the table */}
     </>
   );
 }
