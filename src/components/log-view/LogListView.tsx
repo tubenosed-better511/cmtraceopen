@@ -15,6 +15,7 @@ import {
   COLUMN_NAMES,
   getLogViewGridTemplateColumns,
 } from "../../lib/constants";
+import { getThemeById } from "../../lib/themes";
 import {
   getLogListMetrics,
   LOG_UI_FONT_FAMILY,
@@ -29,8 +30,10 @@ export function LogListView() {
   const isPaused = useLogStore((s) => s.isPaused);
   const showDetails = useUiStore((s) => s.showDetails);
   const logListFontSize = useUiStore((s) => s.logListFontSize);
-  const logSeverityPaletteMode = useUiStore(
-    (s) => s.logSeverityPaletteMode
+  const themeId = useUiStore((s) => s.themeId);
+  const severityPalette = useMemo(
+    () => getThemeById(themeId).severityPalette,
+    [themeId]
   );
   const filteredIds = useFilterStore((s) => s.filteredIds);
 
@@ -255,7 +258,7 @@ export function LogListView() {
                   showDetails={showDetails}
                   listFontSize={listMetrics.fontSize}
                   rowLineHeight={listMetrics.rowLineHeight}
-                  severityPaletteMode={logSeverityPaletteMode}
+                  severityPalette={severityPalette}
                   highlightText={highlightText}
                   highlightCaseSensitive={highlightCaseSensitive}
                   onClick={selectEntry}

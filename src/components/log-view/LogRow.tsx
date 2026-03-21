@@ -1,8 +1,7 @@
 import type { LogEntry } from "../../types/log";
 import {
-  getLogSeverityPalette,
   getLogViewGridTemplateColumns,
-  type LogSeverityPaletteMode,
+  type LogSeverityPalette,
 } from "../../lib/constants";
 import { formatLogEntryTimestamp } from "../../lib/date-time-format";
 import { LOG_UI_FONT_FAMILY } from "../../lib/log-accessibility";
@@ -14,7 +13,7 @@ interface LogRowProps {
   showDetails: boolean;
   listFontSize: number;
   rowLineHeight: number;
-  severityPaletteMode: LogSeverityPaletteMode;
+  severityPalette: LogSeverityPalette;
   highlightText: string;
   highlightCaseSensitive: boolean;
   onClick: (id: number) => void;
@@ -23,9 +22,8 @@ interface LogRowProps {
 function getRowStyle(
   entry: LogEntry,
   isSelected: boolean,
-  severityPaletteMode: LogSeverityPaletteMode
+  palette: LogSeverityPalette
 ) {
-  const palette = getLogSeverityPalette(severityPaletteMode);
 
   if (isSelected) {
     return {
@@ -57,11 +55,9 @@ function highlightMessage(
   text: string,
   highlight: string,
   caseSensitive: boolean,
-  severityPaletteMode: LogSeverityPaletteMode
+  palette: LogSeverityPalette
 ): React.ReactNode {
   if (!highlight) return text;
-
-  const palette = getLogSeverityPalette(severityPaletteMode);
   const flags = caseSensitive ? "g" : "gi";
   const escaped = highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(`(${escaped})`, flags);
@@ -97,12 +93,12 @@ export function LogRow({
   showDetails,
   listFontSize,
   rowLineHeight,
-  severityPaletteMode,
+  severityPalette,
   highlightText,
   highlightCaseSensitive,
   onClick,
 }: LogRowProps) {
-  const style = getRowStyle(entry, isSelected, severityPaletteMode);
+  const style = getRowStyle(entry, isSelected, severityPalette);
   const gridTemplateColumns = getLogViewGridTemplateColumns(showDetails);
   const timestampLabel = formatLogEntryTimestamp(entry);
 
@@ -141,7 +137,7 @@ export function LogRow({
           entry.message,
           highlightText,
           highlightCaseSensitive,
-          severityPaletteMode
+          severityPalette
         )}
       </div>
       {showDetails && (

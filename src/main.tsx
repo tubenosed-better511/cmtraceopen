@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { FluentProvider } from "@fluentui/react-components";
 import App from "./App";
 import { useAppMenu } from "./hooks/use-app-menu";
-import { cmtraceFluentTheme } from "./lib/fluent-theme";
+import { getThemeById } from "./lib/themes";
+import { useUiStore } from "./stores/ui-store";
 import { initializeDateTimeFormatting } from "./lib/date-time-format";
 
 const RootWrapper = import.meta.env.DEV ? React.Fragment : React.StrictMode;
@@ -11,6 +12,22 @@ const RootWrapper = import.meta.env.DEV ? React.Fragment : React.StrictMode;
 function AppRoot() {
   useAppMenu();
   return <App />;
+}
+
+function ThemedApp() {
+  const themeId = useUiStore((s) => s.themeId);
+  const activeTheme = getThemeById(themeId);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("color-scheme", activeTheme.colorScheme);
+    document.body.style.background = activeTheme.fluentTheme.colorNeutralBackground1 as string;
+  }, [activeTheme]);
+
+  return (
+    <FluentProvider theme={activeTheme.fluentTheme} style={{ height: "100%" }}>
+      <AppRoot />
+    </FluentProvider>
+  );
 }
 
 // Reset default browser styles for a desktop-app feel
@@ -26,7 +43,6 @@ style.textContent = `
     overflow: hidden;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     font-size: 13px;
-    background: #f4f7fb;
   }
   mark {
     padding: 0;
@@ -39,9 +55,7 @@ async function bootstrap() {
 
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <RootWrapper>
-      <FluentProvider theme={cmtraceFluentTheme} style={{ height: "100%" }}>
-        <AppRoot />
-      </FluentProvider>
+      <ThemedApp />
     </RootWrapper>
   );
 }

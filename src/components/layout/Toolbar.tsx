@@ -28,6 +28,7 @@ import { useFilterStore } from "../../stores/filter-store";
 import { useIntuneStore } from "../../stores/intune-store";
 import { useDsregcmdStore } from "../../stores/dsregcmd-store";
 import { isIntuneWorkspace, type IntuneWorkspaceId, type WorkspaceId, useUiStore } from "../../stores/ui-store";
+import { ThemePicker } from "./ThemePicker";
 import {
   getLogSourcePath,
   getKnownSourceMetadataById,
@@ -1023,6 +1024,10 @@ export function Toolbar() {
             {label}
           </Button>
         ))}
+
+        <Divider vertical />
+
+        <ThemePicker />
       </div>
     </div>
   );
