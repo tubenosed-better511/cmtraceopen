@@ -1,5 +1,8 @@
 use super::models::{MacosPackageFiles, MacosPackageInfo, MacosPackagesResult};
+use once_cell::sync::Lazy;
 use regex::Regex;
+
+static PKG_ID_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap());
 
 // ---------------------------------------------------------------------------
 // Parsing helpers (cross-platform, always compiled, fully testable)
@@ -89,8 +92,7 @@ pub fn parse_pkgutil_files(output: &str, package_id: &str) -> MacosPackageFiles 
 /// Validates that a package ID contains only safe characters before passing
 /// it to a shell command. Prevents command injection.
 pub fn validate_package_id(id: &str) -> Result<(), String> {
-    let re = Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap();
-    if re.is_match(id) {
+    if PKG_ID_RE.is_match(id) {
         Ok(())
     } else {
         Err(format!(

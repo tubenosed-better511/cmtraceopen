@@ -277,13 +277,13 @@ interface EventLogRowProps {
 }
 
 function EventLogRow({ entry, isExpanded, onClick }: EventLogRowProps) {
-  const severityColor = SEVERITY_COLORS[entry.severity] ?? "#9ca3af";
+  const severityColor = SEVERITY_COLORS[entry.severity] ?? tokens.colorNeutralForeground4;
 
   return (
     <div
       onClick={() => onClick(entry.id)}
       style={{
-        borderBottom: "1px solid #f3f4f6",
+        borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
         cursor: "pointer",
         background: isExpanded ? tokens.colorNeutralBackground2 : "transparent",
       }}
