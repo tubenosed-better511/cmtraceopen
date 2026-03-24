@@ -167,9 +167,9 @@ function clearSelectedFileState(source: LogSource, entries: FolderEntry[]): void
   state.clearActiveFile();
 }
 
-/** Files per batch — each batch runs sequentially (one IPC at a time)
+/** Files per batch — parsed concurrently on Rust's thread pool,
  *  with a UI yield between batches so the browser can paint. */
-const FOLDER_LOAD_BATCH_SIZE = 2;
+const FOLDER_LOAD_BATCH_SIZE = 4;
 
 /** Yield to the browser event loop so it can paint / respond to input. */
 function yieldToUI(): Promise<void> {
