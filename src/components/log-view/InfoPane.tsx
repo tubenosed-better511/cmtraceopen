@@ -10,6 +10,7 @@ import {
   getLogDetailsLineHeight,
   LOG_MONOSPACE_FONT_FAMILY,
 } from "../../lib/log-accessibility";
+import { getCategoryColor } from "../dialogs/ErrorLookupDialog";
 
 export function InfoPane() {
   const entries = useLogStore((state) => state.entries);
@@ -49,7 +50,7 @@ export function InfoPane() {
     >
       <Badge
         appearance="filled"
-        color="informative"
+        color={getCategoryColor(focusedErrorCode.category)}
         style={{ flexShrink: 0 }}
       >
         {focusedErrorCode.category || "Unknown"}

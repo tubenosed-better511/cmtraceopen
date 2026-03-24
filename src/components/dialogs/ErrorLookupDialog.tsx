@@ -34,7 +34,7 @@ interface ErrorLookupDialogProps {
   onClose: () => void;
 }
 
-function getCategoryColor(
+export function getCategoryColor(
   category: string
 ):
   | "informative"
@@ -61,6 +61,12 @@ function getCategoryColor(
     case "Security":
       return "danger";
     case "Network":
+      return "informative";
+    case "Delivery Optimization":
+      return "important";
+    case "Registry":
+      return "informative";
+    case "File System":
       return "informative";
     default:
       return "informative";
@@ -177,7 +183,7 @@ export function ErrorLookupDialog({ isOpen, onClose }: ErrorLookupDialogProps) {
 
   const handleHistoryClick = (h: ErrorLookupHistoryEntry) => {
     setQuery(h.codeHex);
-    void doSearch(h.codeHex);
+    // No explicit doSearch call needed — the useEffect fires immediately for code patterns
   };
 
   if (!isOpen) {

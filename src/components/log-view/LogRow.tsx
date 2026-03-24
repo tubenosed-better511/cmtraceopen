@@ -107,6 +107,9 @@ function renderMessageWithSpans(
   for (let i = 0; i < spans.length; i++) {
     const span = spans[i];
 
+    // Defensive: skip spans that overlap with previous
+    if (span.start < lastEnd) continue;
+
     // Plain text before this span
     if (span.start > lastEnd) {
       const plainText = text.slice(lastEnd, span.start);

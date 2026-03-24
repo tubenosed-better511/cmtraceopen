@@ -58,9 +58,14 @@ pub fn detect_error_code_spans(message: &str) -> Vec<ErrorCodeSpan> {
             let hex_str = &message[m.start()..m.end()];
             let code_val = u32::from_str_radix(&hex_str[2..], 16).ok()?;
             let ec = find_error_code(code_val)?;
+            // Convert byte offsets to character offsets for JavaScript interop.
+            // JS String.slice() uses char indices, but regex::Match returns byte offsets.
+            let char_start = message[..m.start()].chars().count();
+            // The match is all ASCII hex digits, so byte len == char len
+            let char_end = char_start + (m.end() - m.start());
             Some(ErrorCodeSpan {
-                start: m.start(),
-                end: m.end(),
+                start: char_start,
+                end: char_end,
                 code_hex: format!("0x{:08X}", ec.code),
                 description: ec.description.to_string(),
                 category: ec.category.label().to_string(),
@@ -400,5 +405,20 @@ mod tests {
             "Expected at least 400 error codes, got {}",
             ERROR_CODES.len()
         );
+    }
+
+    #[test]
+    fn test_detect_spans_with_non_ascii_prefix() {
+        // "Ñoño" has multi-byte UTF-8 chars, so byte offsets diverge from char offsets
+        let msg = "Ñoño error: 0x80070005 failed";
+        let spans = detect_error_code_spans(msg);
+        assert_eq!(spans.len(), 1);
+        // Verify char offsets work correctly with JS String.slice() semantics
+        let code_text: String = msg
+            .chars()
+            .skip(spans[0].start)
+            .take(spans[0].end - spans[0].start)
+            .collect();
+        assert_eq!(code_text, "0x80070005");
     }
 }
