@@ -869,6 +869,77 @@ function DsregcmdSidebar() {
   );
 }
 
+function SidebarFooter() {
+  const isPaused = useLogStore((s) => s.isPaused);
+  const isLoading = useLogStore((s) => s.isLoading);
+  const activeSource = useLogStore((s) => s.activeSource);
+  const openFilePath = useLogStore((s) => s.openFilePath);
+  const { togglePauseResume, refreshActiveSource } = useAppActions();
+
+  const hasActiveSource = activeSource !== null || openFilePath !== null;
+
+  const statusLabel = isLoading ? "Loading" : isPaused ? "Paused" : "Streaming";
+  const statusBg = isLoading
+    ? tokens.colorPaletteBlueBackground2
+    : isPaused
+      ? tokens.colorPaletteYellowBackground1
+      : tokens.colorPaletteGreenBackground1;
+  const statusFg = isLoading
+    ? tokens.colorPaletteBlueForeground2
+    : isPaused
+      ? tokens.colorPaletteMarigoldForeground2
+      : tokens.colorPaletteGreenForeground1;
+
+  return (
+    <div
+      style={{
+        marginTop: "auto",
+        padding: "6px 8px",
+        borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+        display: "flex",
+        gap: "5px",
+        alignItems: "center",
+        flexShrink: 0,
+      }}
+    >
+      <Button
+        size="small"
+        appearance="subtle"
+        disabled={!hasActiveSource || isLoading}
+        onClick={togglePauseResume}
+        style={{ fontSize: "10px", padding: "3px 8px", minWidth: 0 }}
+      >
+        {isPaused ? "Resume" : "Pause"}
+      </Button>
+      <Button
+        size="small"
+        appearance="subtle"
+        disabled={!hasActiveSource || isLoading}
+        onClick={() => void refreshActiveSource()}
+        style={{ fontSize: "10px", padding: "3px 8px", minWidth: 0 }}
+      >
+        Refresh
+      </Button>
+      {hasActiveSource && (
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: "9px",
+            padding: "2px 6px",
+            borderRadius: "10px",
+            backgroundColor: statusBg,
+            color: statusFg,
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {statusLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function FileSidebar({ width = FILE_SIDEBAR_RECOMMENDED_WIDTH, activeView }: FileSidebarProps) {
   const logListFontSize = useUiStore((s) => s.logListFontSize);
   const metrics = useMemo(() => getLogListMetrics(logListFontSize), [logListFontSize]);
@@ -890,6 +961,7 @@ export function FileSidebar({ width = FILE_SIDEBAR_RECOMMENDED_WIDTH, activeView
       }}
     >
       {activeView === "log" ? <LogSidebar /> : isIntuneWorkspace(activeView) ? <IntuneSidebar /> : <DsregcmdSidebar />}
+      <SidebarFooter />
     </aside>
   );
 }
