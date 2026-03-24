@@ -391,4 +391,14 @@ mod tests {
         let ec = find_error_code(0xDEADBEEF);
         assert!(ec.is_none());
     }
+
+    #[test]
+    fn test_expanded_database_size() {
+        use super::super::codes::ERROR_CODES;
+        assert!(
+            ERROR_CODES.len() >= 400,
+            "Expected at least 400 error codes, got {}",
+            ERROR_CODES.len()
+        );
+    }
 }
