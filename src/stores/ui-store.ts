@@ -22,12 +22,24 @@ export type IntuneWorkspaceId = "intune" | "new-intune";
 export type WorkspaceId = "log" | IntuneWorkspaceId | "dsregcmd" | "macos-diag";
 export type AppView = WorkspaceId;
 
+/** Source context for a tab — enough to restore sidebar and skip redundant folder re-parsing. */
+export interface TabSourceContext {
+  /** The broad source container kind that produced this tab's content. */
+  sourceKind: "file" | "folder" | "known";
+  /** The folder or known-source container path (null for standalone file tabs). */
+  sourcePath: string | null;
+  /** The full LogSource object for restoring state on tab switch. */
+  source: import("../types/log").LogSource;
+}
+
 export interface TabState {
   id: string;
   filePath: string;
   fileName: string;
   scrollPosition: number;
   selectedLineId: number | null;
+  /** Source context — where this file was loaded from. Null for legacy/migrated tabs. */
+  sourceContext: TabSourceContext | null;
 }
 
 export function isIntuneWorkspace(workspace: WorkspaceId): workspace is IntuneWorkspaceId {
@@ -143,7 +155,7 @@ interface UiState {
   addErrorLookupHistoryEntry: (entry: ErrorLookupHistoryEntry) => void;
   clearErrorLookupHistory: () => void;
   closeTransientDialogs: (trigger: string) => void;
-  openTab: (filePath: string, fileName: string) => void;
+  openTab: (filePath: string, fileName: string, sourceContext?: TabSourceContext | null) => void;
   closeTab: (index: number) => void;
   switchTab: (index: number) => void;
   saveTabScrollState: (index: number, scrollPosition: number, selectedLineId: number | null) => void;
@@ -315,7 +327,7 @@ export const useUiStore = create<UiState>()(
         });
       },
 
-      openTab: (filePath, fileName) => {
+      openTab: (filePath, fileName, sourceContext) => {
         if (!filePath) {
           console.warn("[ui-store] openTab called with empty filePath, ignoring");
           return;
@@ -323,7 +335,14 @@ export const useUiStore = create<UiState>()(
         const { openTabs } = get();
         const existingIndex = openTabs.findIndex((t) => t.filePath === filePath);
         if (existingIndex >= 0) {
-          set({ activeTabIndex: existingIndex });
+          // Update source context if provided (may have changed)
+          if (sourceContext) {
+            const updatedTabs = [...openTabs];
+            updatedTabs[existingIndex] = { ...updatedTabs[existingIndex], sourceContext };
+            set({ openTabs: updatedTabs, activeTabIndex: existingIndex });
+          } else {
+            set({ activeTabIndex: existingIndex });
+          }
           return;
         }
         const newTab: TabState = {
@@ -332,6 +351,7 @@ export const useUiStore = create<UiState>()(
           fileName,
           scrollPosition: 0,
           selectedLineId: null,
+          sourceContext: sourceContext ?? null,
         };
         set({
           openTabs: [...openTabs, newTab],

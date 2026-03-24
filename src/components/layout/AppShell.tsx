@@ -23,7 +23,7 @@ import type { LogEntry } from "../../types/log";
 import { useUiStore } from "../../stores/ui-store";
 import { useLogStore } from "../../stores/log-store";
 import { useFilterStore } from "../../stores/filter-store";
-import { loadPathAsLogSource } from "../../lib/log-source";
+import { switchToTab } from "../../lib/log-source";
 import { useFileWatcher } from "../../hooks/use-file-watcher";
 import { useIntuneAnalysisProgress } from "../../hooks/use-intune-analysis-progress";
 import { useKeyboard } from "../../hooks/use-keyboard";
@@ -183,7 +183,9 @@ export function AppShell() {
   // Prompt standalone Windows users to associate .log files like CMTrace.exe
   useFileAssociationPrompt();
 
-  // When the active tab changes, load the corresponding file
+  // When the active tab changes, load the corresponding file using stored source context.
+  // This avoids redundant folder re-parsing — switchToTab uses the tab's source context
+  // to restore the folder sidebar and load only the selected file.
   useEffect(() => {
     const tabs = useUiStore.getState().openTabs;
     if (activeTabIndex < 0 || activeTabIndex >= tabs.length) return;
@@ -192,7 +194,7 @@ export function AppShell() {
     if (currentPath === tab.filePath) return;
 
     useUiStore.getState().ensureLogViewVisible("tab-switch");
-    loadPathAsLogSource(tab.filePath).catch((err) => {
+    switchToTab(tab.filePath, tab.sourceContext).catch((err) => {
       console.error("[tab-switch] failed to load", tab.filePath, err);
     });
   }, [activeTabIndex]);
