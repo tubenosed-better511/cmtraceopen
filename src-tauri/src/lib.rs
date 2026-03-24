@@ -60,6 +60,7 @@ pub fn run() {
             commands::parsing::resume_tail,
             commands::filter::apply_filter,
             commands::error_lookup::lookup_error_code,
+            commands::error_lookup::search_error_codes,
             commands::intune::analyze_intune_logs,
             commands::dsregcmd::analyze_dsregcmd,
             commands::dsregcmd::capture_dsregcmd,
