@@ -186,7 +186,11 @@ export function ErrorLookupDialog({ isOpen, onClose }: ErrorLookupDialogProps) {
 
   const handleCopy = async (r: ErrorSearchResult | ErrorLookupHistoryEntry) => {
     const text = `${r.codeHex} - ${r.description}`;
-    await writeText(text);
+    try {
+      await writeText(text);
+    } catch (err) {
+      console.warn("Clipboard write failed:", err);
+    }
   };
 
   const handleHistoryClick = (h: ErrorLookupHistoryEntry) => {

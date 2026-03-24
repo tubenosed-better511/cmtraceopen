@@ -55,6 +55,11 @@ pub fn detect_error_code_spans(message: &str) -> Vec<ErrorCodeSpan> {
     HEX_CODE_RE
         .find_iter(message)
         .filter_map(|m| {
+            // Skip matches followed by more hex digits (e.g., GUIDs, longer hex values)
+            let after = &message[m.end()..];
+            if after.starts_with(|c: char| c.is_ascii_hexdigit()) {
+                return None;
+            }
             let hex_str = &message[m.start()..m.end()];
             let code_val = u32::from_str_radix(&hex_str[2..], 16).ok()?;
             let ec = find_error_code(code_val)?;
