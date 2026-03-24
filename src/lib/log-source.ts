@@ -6,7 +6,7 @@ import {
   openLogSourceFile,
   stopTail,
 } from "./commands";
-import { useLogStore } from "../stores/log-store";
+import { useLogStore, setCachedTabSnapshot, getCachedTabSnapshot } from "../stores/log-store";
 import { useUiStore, type TabSourceContext } from "../stores/ui-store";
 import type {
   AggregateParseResult,
@@ -142,6 +142,17 @@ function applyParseResultToStore(
   state.setSourceStatus({
     kind: "loaded",
     message: `Loaded ${getBaseName(selectedFilePath)}.`,
+  });
+
+  // Cache the parsed snapshot so tab switches are instant (no re-parse)
+  setCachedTabSnapshot(selectedFilePath, {
+    entries: result.entries,
+    formatDetected: result.formatDetected,
+    parserSelection: result.parserSelection,
+    totalLines: result.totalLines,
+    byteOffset: result.byteOffset,
+    selectedSourceFilePath: selectedFilePath,
+    sourceOpenMode: "single-file",
   });
 
   // Open (or switch to) a tab for the loaded file
@@ -343,10 +354,9 @@ export async function loadSelectedLogFile(
 }
 
 /**
- * Fast-path tab switch: uses stored source context to avoid redundant folder
- * re-parsing. For folder/known-source tabs, restores the folder listing from
- * the cache in log-store (or re-fetches it), then loads the specific file.
- * For standalone file tabs, loads the file directly.
+ * Fast-path tab switch: restores parsed entries from an in-memory cache when
+ * available (zero IPC, instant). Falls back to re-loading from disk on cache
+ * miss. For folder/known-source tabs, also restores the sidebar folder listing.
  */
 export async function switchToTab(
   filePath: string,
@@ -358,6 +368,41 @@ export async function switchToTab(
   // Already showing this file — nothing to do
   if (currentPath === filePath) return;
 
+  // ── Try cache first (instant, no IPC) ──────────────────────────────
+  const cached = getCachedTabSnapshot(filePath);
+  if (cached) {
+    console.info("[log-source] tab switch from cache (instant)", { filePath });
+
+    // Restore sidebar folder context if switching between sources
+    if (sourceContext && sourceContext.sourceKind !== "file") {
+      await restoreFolderContext(logState, sourceContext);
+    } else if (sourceContext?.sourceKind === "file") {
+      // Standalone file — clear folder sidebar state
+      logState.setActiveSource(sourceContext.source);
+      logState.setSourceEntries([]);
+      logState.setBundleMetadata(null);
+    }
+
+    // Swap parsed entries into the store — this is the fast path
+    logState.setEntries(cached.entries);
+    logState.setSelectedSourceFilePath(cached.selectedSourceFilePath);
+    logState.setSourceOpenMode(cached.sourceOpenMode);
+    logState.setFormatDetected(cached.formatDetected);
+    logState.setParserSelection(cached.parserSelection);
+    logState.setTotalLines(cached.totalLines);
+    logState.setByteOffset(cached.byteOffset);
+    logState.setAggregateFiles([]);
+    logState.selectEntry(null);
+    logState.setSourceStatus({
+      kind: "loaded",
+      message: `Loaded ${getBaseName(filePath)}.`,
+    });
+    return;
+  }
+
+  // ── Cache miss — fall back to IPC load ─────────────────────────────
+  console.info("[log-source] tab switch cache miss, loading from disk", { filePath });
+
   // No source context (legacy tab) — fall back to the old path
   if (!sourceContext) {
     await loadPathAsLogSource(filePath);
@@ -367,13 +412,22 @@ export async function switchToTab(
   const { source } = sourceContext;
 
   if (sourceContext.sourceKind === "file") {
-    // Standalone file — load directly, no folder context needed
+    // Standalone file — load directly
     await loadLogSource(source);
     return;
   }
 
-  // Folder or known-source tab — load the individual file within the source
-  // First, restore sidebar folder listing if the active source changed
+  // Folder or known-source tab — restore sidebar then load the file
+  await restoreFolderContext(logState, sourceContext);
+  await loadSelectedLogFile(filePath, source);
+}
+
+/** Restore the sidebar folder listing if the active source changed. */
+async function restoreFolderContext(
+  logState: ReturnType<typeof useLogStore.getState>,
+  sourceContext: TabSourceContext
+): Promise<void> {
+  const { source } = sourceContext;
   const currentSource = logState.activeSource;
   const sourceChanged =
     !currentSource ||
@@ -381,20 +435,16 @@ export async function switchToTab(
     getLogSourcePath(currentSource) !== getLogSourcePath(source);
 
   if (sourceChanged) {
-    console.info("[log-source] tab switch restoring folder context", {
+    console.info("[log-source] restoring folder context", {
       sourceKind: source.kind,
       sourcePath: getLogSourcePath(source),
     });
 
-    // Re-list the folder to restore sidebar entries
     const listing = await listLogSourceFolder(source);
     logState.setActiveSource(source);
     logState.setSourceEntries(listing.entries);
     logState.setBundleMetadata(listing.bundleMetadata ?? null);
   }
-
-  // Now load just the selected file within the source context
-  await loadSelectedLogFile(filePath, source);
 }
 
 export async function loadPathAsLogSource(

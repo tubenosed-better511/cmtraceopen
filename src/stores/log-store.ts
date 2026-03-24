@@ -10,6 +10,46 @@ import type {
   ParserSelectionInfo,
 } from "../types/log";
 
+/**
+ * Snapshot of parsed file state — cached in memory so tab switches
+ * can restore instantly without re-reading / re-parsing the file.
+ */
+export interface TabEntrySnapshot {
+  entries: LogEntry[];
+  formatDetected: LogFormat | null;
+  parserSelection: ParserSelectionInfo | null;
+  totalLines: number;
+  byteOffset: number;
+  selectedSourceFilePath: string | null;
+  sourceOpenMode: SourceOpenMode;
+}
+
+/** Module-level cache: filePath → parsed snapshot. Lives outside Zustand to avoid triggering re-renders. */
+const tabEntryCache = new Map<string, TabEntrySnapshot>();
+
+const TAB_CACHE_MAX_SIZE = 30;
+
+export function getCachedTabSnapshot(filePath: string): TabEntrySnapshot | undefined {
+  return tabEntryCache.get(filePath);
+}
+
+export function setCachedTabSnapshot(filePath: string, snapshot: TabEntrySnapshot): void {
+  // Evict oldest if at capacity
+  if (tabEntryCache.size >= TAB_CACHE_MAX_SIZE && !tabEntryCache.has(filePath)) {
+    const oldestKey = tabEntryCache.keys().next().value;
+    if (oldestKey) tabEntryCache.delete(oldestKey);
+  }
+  tabEntryCache.set(filePath, snapshot);
+}
+
+export function clearCachedTabSnapshot(filePath: string): void {
+  tabEntryCache.delete(filePath);
+}
+
+export function clearAllTabSnapshots(): void {
+  tabEntryCache.clear();
+}
+
 export type SourceStatusKind =
   | "idle"
   | "loading"

@@ -8,6 +8,7 @@ import {
 } from "../lib/log-accessibility";
 import type { ThemeId } from "../lib/themes/types";
 import { DEFAULT_THEME_ID } from "../lib/themes";
+import { clearCachedTabSnapshot } from "./log-store";
 
 export interface ErrorLookupHistoryEntry {
   codeHex: string;
@@ -365,6 +366,8 @@ export const useUiStore = create<UiState>()(
           console.warn("[ui-store] closeTab: invalid index", { index, tabCount: openTabs.length });
           return;
         }
+        // Evict parsed entry cache for the closed tab
+        clearCachedTabSnapshot(openTabs[index].filePath);
         const newTabs = openTabs.filter((_, i) => i !== index);
         let newActive = activeTabIndex;
         if (newTabs.length === 0) {
