@@ -3,6 +3,7 @@ import {
   listLogSourceFolder,
   openLogFile,
   openLogSourceFile,
+  parseFilesBatch,
   stopTail,
 } from "./commands";
 import { useLogStore, setCachedTabSnapshot, getCachedTabSnapshot } from "../stores/log-store";
@@ -167,19 +168,13 @@ function clearSelectedFileState(source: LogSource, entries: FolderEntry[]): void
   state.clearActiveFile();
 }
 
-/** Files per batch — parsed concurrently on Rust's thread pool,
- *  with a UI yield between batches so the browser can paint. */
-const FOLDER_LOAD_BATCH_SIZE = 4;
-
-/** Yield to the browser event loop so it can paint / respond to input. */
-function yieldToUI(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 /**
- * Progressive folder loader: parses files in small sequential batches,
- * yielding to the UI thread between batches so the progress bar animates
- * and the window stays responsive. Each file is cached on completion.
+ * Progressive folder loader: sends ALL file paths to Rust in a single IPC call,
+ * where Rayon parses them in parallel across all CPU cores. This eliminates
+ * N-1 IPC round-trips and leverages true OS-thread parallelism.
+ *
+ * The UI shows an indeterminate progress spinner during the single IPC call,
+ * then caches all results for instant tab switching.
  */
 async function loadFolderProgressive(
   source: LogSource,
@@ -206,81 +201,41 @@ async function loadFolderProgressive(
     return;
   }
 
-  // Show the progress overlay immediately
+  // Show loading overlay (indeterminate — Rust handles all the work)
   state.setFolderLoadProgress({ current: 0, total: fileEntries.length, currentFile: "" });
   state.setSourceStatus({
     kind: "loading",
     message: `Parsing ${fileEntries.length} files from ${folderName}...`,
+    detail: "Files are being parsed in parallel",
   });
 
-  // Yield once so the overlay renders before we start heavy IPC work
-  await yieldToUI();
+  const startTime = performance.now();
 
-  const allResults: { result: ParseResult; index: number }[] = [];
-  let completed = 0;
+  // Single IPC call → Rayon parses all files in parallel on Rust thread pool
+  const paths = fileEntries.map((e) => e.path);
+  const results = await parseFilesBatch(paths);
 
-  // Process in small batches, yielding between each to keep UI alive
-  for (let batchStart = 0; batchStart < fileEntries.length; batchStart += FOLDER_LOAD_BATCH_SIZE) {
-    const batchEnd = Math.min(batchStart + FOLDER_LOAD_BATCH_SIZE, fileEntries.length);
-    const batchPromises: Promise<void>[] = [];
+  const parseMs = Math.round(performance.now() - startTime);
 
-    for (let i = batchStart; i < batchEnd; i++) {
-      const file = fileEntries[i];
-      const idx = i;
-
-      batchPromises.push(
-        openLogFile(file.path)
-          .then((result) => {
-            // Cache for instant tab switching
-            setCachedTabSnapshot(result.filePath, {
-              entries: result.entries,
-              formatDetected: result.formatDetected,
-              parserSelection: result.parserSelection,
-              totalLines: result.totalLines,
-              byteOffset: result.byteOffset,
-              selectedSourceFilePath: result.filePath,
-              sourceOpenMode: "single-file",
-            });
-            allResults.push({ result, index: idx });
-          })
-          .catch((err) => {
-            console.warn("[log-source] skipping unparseable file in folder", {
-              filePath: file.path,
-              error: err,
-            });
-          })
-      );
-    }
-
-    // Wait for the batch to finish
-    await Promise.all(batchPromises);
-    completed = batchEnd;
-
-    // Update progress (once per batch, not per file — reduces re-renders)
-    const lastFile = fileEntries[batchEnd - 1];
-    state.setFolderLoadProgress({
-      current: completed,
-      total: fileEntries.length,
-      currentFile: getBaseName(lastFile.path),
+  // Cache each file's entries for instant tab switching
+  for (const result of results) {
+    setCachedTabSnapshot(result.filePath, {
+      entries: result.entries,
+      formatDetected: result.formatDetected,
+      parserSelection: result.parserSelection,
+      totalLines: result.totalLines,
+      byteOffset: result.byteOffset,
+      selectedSourceFilePath: result.filePath,
+      sourceOpenMode: "single-file",
     });
-    state.setSourceStatus({
-      kind: "loading",
-      message: `Parsed ${completed} of ${fileEntries.length} files`,
-      detail: getBaseName(lastFile.path),
-    });
-
-    // Yield to browser so it can repaint the progress bar
-    await yieldToUI();
   }
 
-  // Sort results by original file order, merge entries
-  allResults.sort((a, b) => a.index - b.index);
-
+  // Build aggregate view
   const allEntries: LogEntry[] = [];
   const aggregateFiles: import("../types/log").AggregateParsedFileResult[] = [];
   let totalLines = 0;
 
-  for (const { result } of allResults) {
+  for (const result of results) {
     allEntries.push(...result.entries);
     totalLines += result.totalLines;
     aggregateFiles.push({
@@ -313,13 +268,13 @@ async function loadFolderProgressive(
   state.setSourceStatus({
     kind: "loaded",
     message: `Loaded ${aggregateFiles.length} file${aggregateFiles.length === 1 ? "" : "s"} from ${folderName}.`,
-    detail: "Folder opened as a merged aggregate view.",
+    detail: `Parsed in ${parseMs} ms (parallel).`,
   });
 
-  console.info("[log-source] progressive folder load complete", {
+  console.info("[log-source] batch folder load complete", {
     fileCount: aggregateFiles.length,
     totalEntries: allEntries.length,
-    batchSize: FOLDER_LOAD_BATCH_SIZE,
+    parseMs,
   });
 }
 async function recoverFromSelectedFileLoadFailure(

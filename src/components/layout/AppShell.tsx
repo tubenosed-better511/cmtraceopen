@@ -209,7 +209,6 @@ export function AppShell() {
 
   const folderLoadProgress = useLogStore((s) => s.folderLoadProgress);
   const folderLoadCurrentFile = useLogStore((s) => s.folderLoadCurrentFile);
-  const folderLoadCompletedFiles = useLogStore((s) => s.folderLoadCompletedFiles);
   const folderLoadTotalFiles = useLogStore((s) => s.folderLoadTotalFiles);
 
   const renderWorkspace = () => {
@@ -242,11 +241,9 @@ export function AppShell() {
                   padding: "32px",
                 }}
               >
-                <Spinner size="medium" />
+                <Spinner size="large" />
                 <div style={{ width: "100%", maxWidth: "400px" }}>
                   <ProgressBar
-                    value={folderLoadProgress}
-                    max={1}
                     thickness="large"
                     color="brand"
                   />
@@ -258,7 +255,7 @@ export function AppShell() {
                     color: tokens.colorNeutralForeground1,
                   }}
                 >
-                  Parsing {folderLoadCompletedFiles ?? 0} of {folderLoadTotalFiles ?? 0} files
+                  Parsing {folderLoadTotalFiles ?? 0} files in parallel...
                 </div>
                 {folderLoadCurrentFile && (
                   <div

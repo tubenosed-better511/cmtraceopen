@@ -275,6 +275,49 @@ pub fn open_log_file(path: String, state: State<'_, AppState>) -> Result<ParseRe
     Ok(result)
 }
 
+/// Parse multiple files in parallel using Rayon, returning all results in a single
+/// IPC response. This eliminates N-1 IPC round-trips compared to calling
+/// `open_log_file` N times individually from the frontend.
+///
+/// Each file is parsed independently and its backend parser selection is stored
+/// in AppState for future tail reading.
+#[tauri::command]
+pub fn parse_files_batch(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<ParseResult>, String> {
+    use rayon::prelude::*;
+
+    // Parse all files in parallel on Rayon's thread pool (lock-free)
+    let results: Vec<Result<(ParseResult, crate::parser::ResolvedParser, String), String>> = paths
+        .par_iter()
+        .map(|path| {
+            let (result, parser_selection) = parser::parse_file(path)?;
+            Ok((result, parser_selection, path.clone()))
+        })
+        .collect();
+
+    // Collect successes and store parser state (requires lock, done sequentially)
+    let mut parse_results = Vec::with_capacity(results.len());
+    let mut open_files = state.open_files.lock().map_err(|e| e.to_string())?;
+
+    for item in results {
+        let (result, parser_selection, path) = item?;
+        open_files.insert(
+            PathBuf::from(&path),
+            OpenFile {
+                path: PathBuf::from(&path),
+                entries: vec![],
+                parser_selection,
+                byte_offset: result.byte_offset,
+            },
+        );
+        parse_results.push(result);
+    }
+
+    Ok(parse_results)
+}
+
 /// Open and parse every file in a folder, returning one combined log stream.
 /// Stores backend parser selections in AppState so each included file can be tailed.
 #[tauri::command]
