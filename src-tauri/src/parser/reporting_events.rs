@@ -104,6 +104,7 @@ fn parse_line(line: &str, file_path: &str) -> Option<LogEntry> {
         format: LogFormat::Timestamped,
         file_path: file_path.to_string(),
         timezone_offset: None,
+        error_code_spans: Vec::new(),
     })
 }
 
@@ -266,6 +267,7 @@ fn fallback_entry(id: u64, line_number: u32, line: &str, file_path: &str) -> Log
         format: LogFormat::Timestamped,
         file_path: file_path.to_string(),
         timezone_offset: None,
+        error_code_spans: Vec::new(),
     }
 }
 

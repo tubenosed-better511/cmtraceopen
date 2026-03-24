@@ -14,6 +14,16 @@ pub mod timestamped;
 use crate::models::log_entry::{LogEntry, ParseResult};
 use std::path::Path;
 
+/// Post-process parsed entries to detect error code spans in messages.
+fn annotate_error_code_spans(entries: &mut [LogEntry]) {
+    for entry in entries.iter_mut() {
+        let spans = crate::error_db::lookup::detect_error_code_spans(&entry.message);
+        if !spans.is_empty() {
+            entry.error_code_spans = spans;
+        }
+    }
+}
+
 pub use detect::ResolvedParser;
 
 /// Result of parsing a single batch of records with a preselected parser.
@@ -54,7 +64,7 @@ pub fn parse_lines_with_selection(
     file_path: &str,
     selection: &ResolvedParser,
 ) -> (Vec<LogEntry>, u32) {
-    match selection.implementation {
+    let (mut entries, parse_errors) = match selection.implementation {
         crate::models::log_entry::ParserImplementation::Ccm => {
             ccm::parse_lines_with_specialization(lines, file_path, selection.specialization)
         }
@@ -81,7 +91,9 @@ pub fn parse_lines_with_selection(
             }
             _ => timestamped::parse_lines(lines, file_path, selection.date_order),
         },
-    }
+    };
+    annotate_error_code_spans(&mut entries);
+    (entries, parse_errors)
 }
 
 /// Parse text content using the backend-owned parser selection.
@@ -91,7 +103,7 @@ pub fn parse_content_with_selection(
     selection: &ResolvedParser,
 ) -> ParsedChunk {
     let total_lines = content.lines().count() as u32;
-    let (entries, parse_errors) = match selection.implementation {
+    let (mut entries, parse_errors) = match selection.implementation {
         crate::models::log_entry::ParserImplementation::Ccm => {
             ccm::parse_content(content, file_path, selection.specialization)
         }
@@ -100,6 +112,14 @@ pub fn parse_content_with_selection(
             parse_lines_with_selection(&lines, file_path, selection)
         }
     };
+    // For CCM content path (which doesn't go through parse_lines_with_selection),
+    // ensure error code spans are annotated.
+    if matches!(
+        selection.implementation,
+        crate::models::log_entry::ParserImplementation::Ccm
+    ) {
+        annotate_error_code_spans(&mut entries);
+    }
 
     ParsedChunk {
         entries,
@@ -371,5 +391,15 @@ mod tests {
         assert_eq!(parsed.entries[0].format, crate::models::log_entry::LogFormat::Ccm);
         assert_eq!(parsed.entries[1].format, crate::models::log_entry::LogFormat::Plain);
         assert_eq!(parsed.entries[1].line_number, 2);
+    }
+
+    #[test]
+    fn test_parsed_entries_have_error_spans() {
+        let content = r#"<![LOG[Installation failed with error 0x80070005 access denied]LOG]!><time="10:00:00.000+000" date="01-01-2024" component="TestComp" context="" type="3" thread="1234" file="">"#;
+        let selection = ResolvedParser::ccm();
+        let parsed = parse_content_with_selection(content, "test.log", &selection);
+        assert_eq!(parsed.entries.len(), 1);
+        assert!(!parsed.entries[0].error_code_spans.is_empty());
+        assert_eq!(parsed.entries[0].error_code_spans[0].code_hex, "0x80070005");
     }
 }

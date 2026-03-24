@@ -12,6 +12,7 @@ import { useLogStore } from "../../stores/log-store";
 import { useUiStore } from "../../stores/ui-store";
 import { useFilterStore } from "../../stores/filter-store";
 import { LogRow } from "./LogRow";
+import type { ErrorCodeSpan } from "../../types/log";
 import {
   COLUMN_NAMES,
   getLogViewGridTemplateColumns,
@@ -61,6 +62,19 @@ export function LogListView() {
     () => getLogListMetrics(logListFontSize),
     [logListFontSize]
   );
+
+  const handleErrorCodeClick = useCallback((span: ErrorCodeSpan) => {
+    // Open info pane if not already open
+    if (!useUiStore.getState().showInfoPane) {
+      useUiStore.getState().toggleInfoPane();
+    }
+    useUiStore.getState().setFocusedErrorCode({
+      codeHex: span.codeHex,
+      codeDecimal: span.codeDecimal,
+      description: span.description,
+      category: span.category,
+    });
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: displayEntries.length,
@@ -263,6 +277,7 @@ export function LogListView() {
                   highlightText={highlightText}
                   highlightCaseSensitive={highlightCaseSensitive}
                   onClick={selectEntry}
+                  onErrorCodeClick={handleErrorCodeClick}
                 />
               </div>
             );

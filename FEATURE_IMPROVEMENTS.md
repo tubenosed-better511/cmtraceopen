@@ -11,6 +11,16 @@ work, Completed = shipped unless a regression is found
 **Effort key**: S = small (< 4 hours), M = medium (4–16 hours), L = large (16–40
 hours), XL = 40+ hours
 
+Feature requests 
+- DHCP Log prasing, client and server
+- MSI log prasing
+- PSADT logging
+- Add dir for %windir% logs software
+- Software Install Failure workspace
+
+- update documentation to show off how to use each workspace.
+- make the sidebar in the logviewer optional.
+
 ## Active Focus
 
 The evidence-bundle intake baseline is now in place. The current focus is

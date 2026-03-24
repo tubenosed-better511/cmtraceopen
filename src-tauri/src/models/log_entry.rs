@@ -136,6 +136,9 @@ pub struct LogEntry {
     pub file_path: String,
     /// Timezone offset in minutes
     pub timezone_offset: Option<i32>,
+    /// Spans of recognized error codes within the message text
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub error_code_spans: Vec<crate::error_db::lookup::ErrorCodeSpan>,
 }
 
 /// Result of parsing a complete log file.

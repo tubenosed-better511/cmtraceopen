@@ -95,6 +95,15 @@ export interface KnownSourceMetadata {
   defaultFileIntent?: KnownSourceDefaultFileIntent;
 }
 
+export interface ErrorCodeSpan {
+  start: number;
+  end: number;
+  codeHex: string;
+  codeDecimal: string;
+  description: string;
+  category: string;
+}
+
 export interface LogEntry {
   id: number;
   lineNumber: number;
@@ -109,6 +118,7 @@ export interface LogEntry {
   format: LogFormat;
   filePath: string;
   timezoneOffset: number | null;
+  errorCodeSpans?: ErrorCodeSpan[];
 }
 
 export interface ParserSelectionInfo {

@@ -1,4 +1,5 @@
-import { tokens } from "@fluentui/react-components";
+import { Badge, Button, tokens } from "@fluentui/react-components";
+import { DismissRegular } from "@fluentui/react-icons";
 import {
   getParserSelectionDisplay,
   useLogStore,
@@ -9,12 +10,18 @@ import {
   getLogDetailsLineHeight,
   LOG_MONOSPACE_FONT_FAMILY,
 } from "../../lib/log-accessibility";
+import { getCategoryColor } from "../../lib/error-categories";
 
 export function InfoPane() {
   const entries = useLogStore((state) => state.entries);
   const selectedId = useLogStore((state) => state.selectedId);
   const parserSelection = useLogStore((state) => state.parserSelection);
   const logDetailsFontSize = useUiStore((state) => state.logDetailsFontSize);
+  const focusedErrorCode = useUiStore((state) => state.focusedErrorCode);
+  const setFocusedErrorCode = useUiStore((state) => state.setFocusedErrorCode);
+  const setShowErrorLookupDialog = useUiStore(
+    (state) => state.setShowErrorLookupDialog
+  );
 
   const parserDisplay = getParserSelectionDisplay(parserSelection);
   const detailLineHeight = getLogDetailsLineHeight(logDetailsFontSize);
@@ -26,6 +33,69 @@ export function InfoPane() {
   const selectedTimestamp = selectedEntry
     ? formatLogEntryTimestamp(selectedEntry)
     : null;
+
+  const errorCodeBanner = focusedErrorCode ? (
+    <div
+      style={{
+        padding: "6px 8px",
+        marginBottom: "8px",
+        backgroundColor: tokens.colorNeutralBackground3,
+        borderRadius: "4px",
+        border: `1px solid ${tokens.colorNeutralStroke2}`,
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        flexWrap: "wrap",
+      }}
+    >
+      <Badge
+        appearance="filled"
+        color={getCategoryColor(focusedErrorCode.category)}
+        style={{ flexShrink: 0 }}
+      >
+        {focusedErrorCode.category || "Unknown"}
+      </Badge>
+      <span
+        style={{
+          fontFamily: LOG_MONOSPACE_FONT_FAMILY,
+          fontWeight: 600,
+          fontSize: `${logDetailsFontSize}px`,
+        }}
+      >
+        {focusedErrorCode.codeHex}
+      </span>
+      <span
+        style={{
+          fontFamily: LOG_MONOSPACE_FONT_FAMILY,
+          fontSize: `${Math.max(logDetailsFontSize - 1, 11)}px`,
+          color: tokens.colorNeutralForeground3,
+        }}
+      >
+        ({focusedErrorCode.codeDecimal})
+      </span>
+      <span style={{ flex: 1, fontSize: `${logDetailsFontSize}px` }}>
+        {focusedErrorCode.description}
+      </span>
+      <Button
+        size="small"
+        appearance="subtle"
+        onClick={() => {
+          setShowErrorLookupDialog(true);
+          setFocusedErrorCode(null);
+        }}
+      >
+        Open Lookup
+      </Button>
+      <Button
+        size="small"
+        appearance="subtle"
+        icon={<DismissRegular />}
+        onClick={() => setFocusedErrorCode(null)}
+        title="Dismiss"
+        aria-label="Dismiss error details"
+      />
+    </div>
+  ) : null;
 
   if (!selectedEntry) {
     return (
@@ -42,6 +112,7 @@ export function InfoPane() {
           borderTop: `2px solid ${tokens.colorNeutralStroke2}`,
         }}
       >
+        {errorCodeBanner}
         {entries.length === 0
           ? "No log entries loaded"
           : "Select a log entry to view details (Arrow keys, Page Up/Down, Home/End supported when list is focused)"}
@@ -62,6 +133,7 @@ export function InfoPane() {
         borderTop: `2px solid ${tokens.colorNeutralStroke2}`,
       }}
     >
+      {errorCodeBanner}
       <div style={{ marginBottom: "8px", color: tokens.colorNeutralForeground2 }}>
         {`Line ${selectedEntry.lineNumber} | ${selectedEntry.severity}${selectedEntry.component ? ` | ${selectedEntry.component}` : ""
           }${selectedTimestamp ? ` | ${selectedTimestamp}` : ""}`}

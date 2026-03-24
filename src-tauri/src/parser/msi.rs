@@ -671,6 +671,7 @@ fn make_entry(
         format: LogFormat::Timestamped,
         file_path: file_path.to_string(),
         timezone_offset: None,
+        error_code_spans: Vec::new(),
     }
 }
 

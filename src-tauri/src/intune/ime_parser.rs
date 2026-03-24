@@ -78,6 +78,7 @@ pub fn parse_ime_entries(content: &str, file_path: &str) -> (Vec<LogEntry>, u32)
             format: entry.format,
             file_path: file_path.to_string(),
             timezone_offset: entry.timezone_offset,
+            error_code_spans: Vec::new(),
         })
         .collect();
 

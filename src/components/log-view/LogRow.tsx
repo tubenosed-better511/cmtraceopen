@@ -1,5 +1,5 @@
 import { tokens } from "@fluentui/react-components";
-import type { LogEntry } from "../../types/log";
+import type { LogEntry, ErrorCodeSpan } from "../../types/log";
 import {
   getLogViewGridTemplateColumns,
   type LogSeverityPalette,
@@ -18,6 +18,7 @@ interface LogRowProps {
   highlightText: string;
   highlightCaseSensitive: boolean;
   onClick: (id: number) => void;
+  onErrorCodeClick?: (span: ErrorCodeSpan) => void;
 }
 
 function getRowStyle(
@@ -87,6 +88,99 @@ function highlightMessage(
   });
 }
 
+function renderMessageWithSpans(
+  text: string,
+  spans: ErrorCodeSpan[] | undefined,
+  highlight: string,
+  caseSensitive: boolean,
+  palette: LogSeverityPalette,
+  isSelected: boolean,
+  onSpanClick?: (span: ErrorCodeSpan) => void
+): React.ReactNode {
+  if (!spans || spans.length === 0) {
+    return highlightMessage(text, highlight, caseSensitive, palette);
+  }
+
+  const segments: React.ReactNode[] = [];
+  let lastEnd = 0;
+
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i];
+
+    // Defensive: skip spans that overlap with previous
+    if (span.start < lastEnd) continue;
+
+    // Plain text before this span
+    if (span.start > lastEnd) {
+      const plainText = text.slice(lastEnd, span.start);
+      segments.push(
+        <span key={`plain-${i}`}>
+          {highlightMessage(plainText, highlight, caseSensitive, palette)}
+        </span>
+      );
+    }
+
+    // The error code span itself
+    const codeText = text.slice(span.start, span.end);
+    segments.push(
+      <span
+        key={`code-${span.start}`}
+        title={`${span.codeHex} — ${span.description} [${span.category}]`}
+        onClick={
+          onSpanClick
+            ? (e) => {
+                e.stopPropagation();
+                onSpanClick(span);
+              }
+            : undefined
+        }
+        onKeyDown={
+          onSpanClick
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSpanClick(span);
+                }
+              }
+            : undefined
+        }
+        role={onSpanClick ? "button" : undefined}
+        tabIndex={onSpanClick ? 0 : undefined}
+        style={{
+          textDecoration: "underline dotted",
+          textDecorationColor: isSelected
+            ? tokens.colorNeutralForegroundOnBrand
+            : tokens.colorPaletteRedBorder2,
+          textUnderlineOffset: "2px",
+          cursor: onSpanClick ? "pointer" : "inherit",
+          borderRadius: "2px",
+        }}
+      >
+        {codeText}
+      </span>
+    );
+
+    lastEnd = span.end;
+  }
+
+  // Remaining text after last span
+  if (lastEnd < text.length) {
+    segments.push(
+      <span key="tail">
+        {highlightMessage(
+          text.slice(lastEnd),
+          highlight,
+          caseSensitive,
+          palette
+        )}
+      </span>
+    );
+  }
+
+  return <>{segments}</>;
+}
+
 export function LogRow({
   entry,
   rowDomId,
@@ -98,6 +192,7 @@ export function LogRow({
   highlightText,
   highlightCaseSensitive,
   onClick,
+  onErrorCodeClick,
 }: LogRowProps) {
   const style = getRowStyle(entry, isSelected, severityPalette);
   const gridTemplateColumns = getLogViewGridTemplateColumns(showDetails);
@@ -134,11 +229,14 @@ export function LogRow({
           padding: "1px 4px",
         }}
       >
-        {highlightMessage(
+        {renderMessageWithSpans(
           entry.message,
+          entry.errorCodeSpans,
           highlightText,
           highlightCaseSensitive,
-          severityPalette
+          severityPalette,
+          isSelected,
+          onErrorCodeClick
         )}
       </div>
       {showDetails && (
