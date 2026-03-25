@@ -380,7 +380,7 @@ export function LogListView() {
                   severityPalette={severityPalette}
                   highlightText={highlightText}
                   highlightCaseSensitive={highlightCaseSensitive}
-                  onClick={(id) => { suppressScrollRef.current = true; selectEntry(id); }}
+                  onClick={(id) => { if (id !== selectedId) { suppressScrollRef.current = true; } selectEntry(id); }}
                   onErrorCodeClick={handleErrorCodeClick}
                 />
               </div>
