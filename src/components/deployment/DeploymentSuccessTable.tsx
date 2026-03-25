@@ -1,6 +1,10 @@
 import { tokens } from "@fluentui/react-components";
 import type { DeploymentLogFile } from "../../stores/deployment-store";
 
+function displayName(file: DeploymentLogFile): string {
+  return file.appName ?? file.fileName;
+}
+
 export function DeploymentSuccessTable({
   files,
 }: {
@@ -28,7 +32,8 @@ export function DeploymentSuccessTable({
               textAlign: "left",
             }}
           >
-            <th style={{ padding: "6px 10px", fontWeight: 600 }}>File</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Application</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Version</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Format</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Outcome</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Exit Code</th>
@@ -45,10 +50,13 @@ export function DeploymentSuccessTable({
               <td
                 style={{
                   padding: "5px 10px",
-                  fontFamily: "monospace",
                 }}
+                title={file.fileName}
               >
-                {file.fileName}
+                {displayName(file)}
+              </td>
+              <td style={{ padding: "5px 10px" }}>
+                {file.appVersion ?? "—"}
               </td>
               <td style={{ padding: "5px 10px" }}>{file.format}</td>
               <td

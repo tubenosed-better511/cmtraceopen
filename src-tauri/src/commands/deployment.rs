@@ -65,6 +65,8 @@ pub struct DeploymentLogFile {
     pub exit_code: Option<i32>,
     pub error_summary: Option<String>,
     pub error_lines: Vec<DeploymentErrorLine>,
+    pub app_name: Option<String>,
+    pub app_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +97,31 @@ static PSADT_EXIT_CODE_RE: Lazy<Regex> = Lazy::new(|| {
 
 static BURN_RETURN_CODE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)(?:error|return)\s*code[:\s]+(\d+)").unwrap()
+});
+
+// MSI metadata: Property(S): ProductName = <value>
+static MSI_PRODUCT_NAME_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Property\(S\):\s*ProductName\s*=\s*(.+)").unwrap()
+});
+
+static MSI_PRODUCT_VERSION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Property\(S\):\s*ProductVersion\s*=\s*(.+)").unwrap()
+});
+
+// PSADT: Open-ADTSession message contains [Vendor Name Version]
+// e.g., "Open-ADTSession [Contoso Foo App 1.2.3]" or in component field
+static PSADT_SESSION_INFO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\[([^\]]+)\]").unwrap()
+});
+
+// Burn: first i001 line e.g. "Burn v3.14.1.8722, Windows v10.0"
+static BURN_VERSION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Burn v([\d.]+)").unwrap()
+});
+
+// PatchMyPC: "Starting UserNotification V2.1.100.317"
+static PATCHMYPC_VERSION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)Starting\s+UserNotification\s+V([\d.]+)").unwrap()
 });
 
 // ── PSADT keywords ──────────────────────────────────────────────────────
@@ -150,6 +177,111 @@ fn classify_format(
         }
         _ => DeploymentFormat::Unknown,
     }
+}
+
+// ── App metadata extraction ─────────────────────────────────────────────
+
+fn extract_app_metadata(
+    format: &DeploymentFormat,
+    entries: &[LogEntry],
+) -> (Option<String>, Option<String>) {
+    match format {
+        DeploymentFormat::MsiVerbose => {
+            let mut name = None;
+            let mut version = None;
+            for entry in entries.iter() {
+                if name.is_none() {
+                    if let Some(caps) = MSI_PRODUCT_NAME_RE.captures(&entry.message) {
+                        name = Some(caps[1].trim().to_string());
+                    }
+                }
+                if version.is_none() {
+                    if let Some(caps) = MSI_PRODUCT_VERSION_RE.captures(&entry.message) {
+                        version = Some(caps[1].trim().to_string());
+                    }
+                }
+                if name.is_some() && version.is_some() {
+                    break;
+                }
+            }
+            (name, version)
+        }
+        DeploymentFormat::PsadtCmtrace | DeploymentFormat::PsadtWrapper => {
+            // Look for Open-ADTSession in message text
+            for entry in entries.iter() {
+                if entry.message.contains("Open-ADTSession") {
+                    if let Some(caps) = PSADT_SESSION_INFO_RE.captures(&entry.message) {
+                        let info = caps[1].trim().to_string();
+                        return parse_psadt_app_info(&info);
+                    }
+                }
+            }
+            (None, None)
+        }
+        DeploymentFormat::PsadtLegacy => {
+            // Component field is the source function name
+            for entry in entries.iter() {
+                let is_open = entry
+                    .component
+                    .as_deref()
+                    .is_some_and(|c| c.contains("Open-ADTSession"));
+                if is_open {
+                    if let Some(caps) = PSADT_SESSION_INFO_RE.captures(&entry.message) {
+                        let info = caps[1].trim().to_string();
+                        return parse_psadt_app_info(&info);
+                    }
+                }
+            }
+            (None, None)
+        }
+        DeploymentFormat::Burn => {
+            // First i001 message: "Burn v3.14.1.8722, Windows v10.0..."
+            for entry in entries.iter() {
+                let is_i001 = entry
+                    .component
+                    .as_deref()
+                    .is_some_and(|c| c == "i001");
+                if is_i001 {
+                    let version = BURN_VERSION_RE
+                        .captures(&entry.message)
+                        .map(|c| c[1].to_string());
+                    // Use the full message as app name (it often has the product info)
+                    let name = Some(entry.message.clone());
+                    return (name, version);
+                }
+            }
+            (None, None)
+        }
+        DeploymentFormat::PatchMyPc => {
+            for entry in entries.iter() {
+                if let Some(caps) = PATCHMYPC_VERSION_RE.captures(&entry.message) {
+                    return (
+                        Some("PatchMyPC UserNotification".to_string()),
+                        Some(caps[1].to_string()),
+                    );
+                }
+            }
+            (Some("PatchMyPC".to_string()), None)
+        }
+        DeploymentFormat::Unknown => (None, None),
+    }
+}
+
+/// Parse PSADT app info from "[Vendor Name Version]" bracket content.
+/// The convention is "Vendor AppName Version" but the fields aren't quoted.
+/// Heuristic: if the last token looks like a version (digits/dots), split it off.
+fn parse_psadt_app_info(info: &str) -> (Option<String>, Option<String>) {
+    let parts: Vec<&str> = info.rsplitn(2, ' ').collect();
+    if parts.len() == 2 {
+        let maybe_version = parts[0];
+        let maybe_name = parts[1];
+        // Check if last token looks like a version (starts with a digit)
+        if maybe_version.starts_with(|c: char| c.is_ascii_digit()) {
+            return (Some(maybe_name.to_string()), Some(maybe_version.to_string()));
+        }
+    }
+    // Can't split — return the whole thing as the app name
+    (Some(info.to_string()), None)
 }
 
 // ── Exit code extraction ────────────────────────────────────────────────
@@ -347,6 +479,7 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
                 }
                 _ => Vec::new(),
             };
+            let (app_name, app_version) = extract_app_metadata(&format, &result.entries);
 
             DeploymentLogFile {
                 path: file_path.to_string(),
@@ -356,6 +489,8 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
                 exit_code,
                 error_summary,
                 error_lines,
+                app_name,
+                app_version,
             }
         }
         Err(_) => DeploymentLogFile {
@@ -366,6 +501,8 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
             exit_code: None,
             error_summary: None,
             error_lines: Vec::new(),
+            app_name: None,
+            app_version: None,
         },
     }
 }
@@ -459,11 +596,15 @@ mod tests {
     use crate::models::log_entry::LogFormat;
 
     fn make_entry(msg: &str, sev: Severity) -> LogEntry {
+        make_entry_with_component(msg, sev, None)
+    }
+
+    fn make_entry_with_component(msg: &str, sev: Severity, component: Option<&str>) -> LogEntry {
         LogEntry {
             id: 0,
             line_number: 1,
             message: msg.to_string(),
-            component: None,
+            component: component.map(|s| s.to_string()),
             timestamp: None,
             timestamp_display: None,
             severity: sev,
@@ -589,5 +730,54 @@ mod tests {
     #[test]
     fn test_error_summary_success_none() {
         assert!(generate_error_summary(&DeploymentFormat::MsiVerbose, Some(0), &DeploymentOutcome::Success).is_none());
+    }
+
+    #[test]
+    fn test_msi_app_metadata() {
+        let entries = vec![
+            make_entry("Property(S): ProductName = Contoso Widget", Severity::Info),
+            make_entry("Property(S): ProductVersion = 2.3.1", Severity::Info),
+        ];
+        let (name, version) = extract_app_metadata(&DeploymentFormat::MsiVerbose, &entries);
+        assert_eq!(name.as_deref(), Some("Contoso Widget"));
+        assert_eq!(version.as_deref(), Some("2.3.1"));
+    }
+
+    #[test]
+    fn test_psadt_app_metadata() {
+        let entries = vec![
+            make_entry("Open-ADTSession [Contoso Foo App 1.2.3]", Severity::Info),
+        ];
+        let (name, version) = extract_app_metadata(&DeploymentFormat::PsadtCmtrace, &entries);
+        assert_eq!(name.as_deref(), Some("Contoso Foo App"));
+        assert_eq!(version.as_deref(), Some("1.2.3"));
+    }
+
+    #[test]
+    fn test_burn_app_metadata() {
+        let entries = vec![
+            make_entry_with_component("Burn v3.14.1.8722, Windows v10.0 (Build 26100)", Severity::Info, Some("i001")),
+        ];
+        let (name, version) = extract_app_metadata(&DeploymentFormat::Burn, &entries);
+        assert!(name.is_some());
+        assert!(name.unwrap().contains("Burn v3.14.1.8722"));
+        assert_eq!(version.as_deref(), Some("3.14.1.8722"));
+    }
+
+    #[test]
+    fn test_patchmypc_app_metadata() {
+        let entries = vec![
+            make_entry("Starting UserNotification V2.1.100.317", Severity::Info),
+        ];
+        let (name, version) = extract_app_metadata(&DeploymentFormat::PatchMyPc, &entries);
+        assert_eq!(name.as_deref(), Some("PatchMyPC UserNotification"));
+        assert_eq!(version.as_deref(), Some("2.1.100.317"));
+    }
+
+    #[test]
+    fn test_psadt_app_info_no_version() {
+        let (name, version) = parse_psadt_app_info("SingleName");
+        assert_eq!(name.as_deref(), Some("SingleName"));
+        assert!(version.is_none());
     }
 }

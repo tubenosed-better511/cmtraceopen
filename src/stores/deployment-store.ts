@@ -16,6 +16,8 @@ export interface DeploymentLogFile {
   exitCode: number | null;
   errorSummary: string | null;
   errorLines: DeploymentErrorLine[];
+  appName: string | null;
+  appVersion: string | null;
 }
 
 export interface DeploymentErrorLine {

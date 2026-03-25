@@ -34,7 +34,7 @@ export function DeploymentErrorCard({
       >
         <div>
           <div style={{ fontSize: "13px", fontWeight: 600 }}>
-            {file.fileName}
+            {file.appName ?? file.fileName}
           </div>
           <div
             style={{
@@ -42,6 +42,7 @@ export function DeploymentErrorCard({
               color: tokens.colorNeutralForeground3,
             }}
           >
+            {file.appName ? file.fileName : ""}{file.appVersion ? ` v${file.appVersion}` : ""}{" "}
             {file.format} {file.exitCode != null && `· exit ${file.exitCode}`}
           </div>
         </div>
