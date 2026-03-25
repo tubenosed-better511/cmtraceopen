@@ -1529,6 +1529,31 @@ fn build_diagnostics(
     diagnostics
 }
 
+/// Cross-reference enrollment registry entries with scheduled task GUIDs
+/// to upgrade `mdm_enrolled` when dsregcmd output lacks MDM URLs.
+pub fn apply_enrollment_cross_reference(result: &mut DsregcmdAnalysisResult) {
+    if result.derived.mdm_enrolled.is_some() {
+        return;
+    }
+    if let (Some(enrollment), Some(tasks)) = (
+        &result.enrollment_evidence,
+        &result.scheduled_task_evidence,
+    ) {
+        let confirmed = enrollment.enrollments.iter().any(|e| {
+            e.enrollment_state == Some(1)
+                && e.guid.as_ref().is_some_and(|g| {
+                    tasks
+                        .enterprise_mgmt_guids
+                        .iter()
+                        .any(|t| t.eq_ignore_ascii_case(g))
+                })
+        });
+        if confirmed {
+            result.derived.mdm_enrolled = Some(true);
+        }
+    }
+}
+
 /// Extended diagnostics based on registry evidence collected in Phase 2.
 pub fn build_extended_diagnostics(
     result: &DsregcmdAnalysisResult,
@@ -1663,19 +1688,23 @@ pub fn build_extended_diagnostics(
         && result.facts.management_details.mdm_compliance_url.is_none();
     if result.derived.mdm_enrolled == Some(true) && mdm_urls_absent {
         let mut evidence_lines = Vec::new();
-        if let Some(ref enrollment) = result.enrollment_evidence {
+        if let (Some(ref enrollment), Some(ref tasks)) =
+            (&result.enrollment_evidence, &result.scheduled_task_evidence)
+        {
             for entry in &enrollment.enrollments {
-                if entry.enrollment_state == Some(1) {
+                let guid_matched = entry.enrollment_state == Some(1)
+                    && entry.guid.as_ref().is_some_and(|g| {
+                        tasks.enterprise_mgmt_guids.iter().any(|t| t.eq_ignore_ascii_case(g))
+                    });
+                if guid_matched {
                     let guid_display = entry.guid.as_deref().unwrap_or("(unknown)");
                     let upn_display = entry.upn.as_deref().unwrap_or("(no UPN)");
                     evidence_lines.push(format!(
-                        "GUID: {} — UPN: {} — EnrollmentState: 1",
+                        "GUID: {} — UPN: {} — EnrollmentState: 1 — matched scheduled task",
                         guid_display, upn_display
                     ));
                 }
             }
-        }
-        if let Some(ref tasks) = result.scheduled_task_evidence {
             evidence_lines.push(format!(
                 "EnterpriseMgmt scheduled task GUIDs: {}",
                 if tasks.enterprise_mgmt_guids.is_empty() {
@@ -2898,12 +2927,11 @@ mod tests {
             DsregcmdEnrollmentEntry, DsregcmdEnrollmentEvidence,
             DsregcmdScheduledTaskEvidence,
         };
-        use super::build_extended_diagnostics;
+        use super::{apply_enrollment_cross_reference, build_extended_diagnostics};
 
         let facts = parse_dsregcmd(NOT_JOINED_SAMPLE).expect("parse sample");
         let mut result = analyze_facts(facts, NOT_JOINED_SAMPLE);
 
-        // Simulate enrollment evidence with state=1 and matching task GUID
         result.enrollment_evidence = Some(DsregcmdEnrollmentEvidence {
             enrollment_count: 1,
             enrollments: vec![DsregcmdEnrollmentEntry {
@@ -2919,25 +2947,8 @@ mod tests {
             ],
         });
 
-        // Simulate the cross-reference upgrading mdm_enrolled
         assert_eq!(result.derived.mdm_enrolled, None);
-        // Apply same logic as command handler
-        if result.derived.mdm_enrolled.is_none() {
-            if let (Some(enrollment), Some(tasks)) = (
-                &result.enrollment_evidence,
-                &result.scheduled_task_evidence,
-            ) {
-                let confirmed = enrollment.enrollments.iter().any(|e| {
-                    e.enrollment_state == Some(1)
-                        && e.guid.as_ref().is_some_and(|g| {
-                            tasks.enterprise_mgmt_guids.iter().any(|t| t.eq_ignore_ascii_case(g))
-                        })
-                });
-                if confirmed {
-                    result.derived.mdm_enrolled = Some(true);
-                }
-            }
-        }
+        apply_enrollment_cross_reference(&mut result);
         assert_eq!(result.derived.mdm_enrolled, Some(true));
 
         let extended = build_extended_diagnostics(&result);
@@ -2953,6 +2964,7 @@ mod tests {
             DsregcmdEnrollmentEntry, DsregcmdEnrollmentEvidence,
             DsregcmdScheduledTaskEvidence,
         };
+        use super::apply_enrollment_cross_reference;
 
         let facts = parse_dsregcmd(NOT_JOINED_SAMPLE).expect("parse sample");
         let mut result = analyze_facts(facts, NOT_JOINED_SAMPLE);
@@ -2974,22 +2986,7 @@ mod tests {
         });
 
         // Cross-reference should NOT upgrade because GUIDs don't match
-        if result.derived.mdm_enrolled.is_none() {
-            if let (Some(enrollment), Some(tasks)) = (
-                &result.enrollment_evidence,
-                &result.scheduled_task_evidence,
-            ) {
-                let confirmed = enrollment.enrollments.iter().any(|e| {
-                    e.enrollment_state == Some(1)
-                        && e.guid.as_ref().is_some_and(|g| {
-                            tasks.enterprise_mgmt_guids.iter().any(|t| t.eq_ignore_ascii_case(g))
-                        })
-                });
-                if confirmed {
-                    result.derived.mdm_enrolled = Some(true);
-                }
-            }
-        }
+        apply_enrollment_cross_reference(&mut result);
         assert_eq!(result.derived.mdm_enrolled, None, "should stay None when GUIDs don't match");
     }
 }

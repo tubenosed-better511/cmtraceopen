@@ -67,7 +67,7 @@ pub fn analyze_dsregcmd(
         result.event_log_analysis = load_event_log_from_bundle(bp);
     }
 
-    apply_enrollment_cross_reference(&mut result);
+    rules::apply_enrollment_cross_reference(&mut result);
 
     // Run extended diagnostics (Phase 2, 3, 4) after all evidence is loaded
     let mut extended = rules::build_extended_diagnostics(&result);
@@ -137,30 +137,6 @@ fn load_scheduled_task_evidence_from_bundle(
         .and_then(|json| serde_json::from_str(&json).ok())
 }
 
-/// Cross-reference enrollment registry entries with scheduled task GUIDs
-/// to upgrade `mdm_enrolled` when dsregcmd output lacks MDM URLs.
-fn apply_enrollment_cross_reference(result: &mut DsregcmdAnalysisResult) {
-    if result.derived.mdm_enrolled.is_some() {
-        return;
-    }
-    if let (Some(enrollment), Some(tasks)) = (
-        &result.enrollment_evidence,
-        &result.scheduled_task_evidence,
-    ) {
-        let confirmed = enrollment.enrollments.iter().any(|e| {
-            e.enrollment_state == Some(1)
-                && e.guid.as_ref().is_some_and(|g| {
-                    tasks
-                        .enterprise_mgmt_guids
-                        .iter()
-                        .any(|t| t.eq_ignore_ascii_case(g))
-                })
-        });
-        if confirmed {
-            result.derived.mdm_enrolled = Some(true);
-        }
-    }
-}
 
 #[tauri::command]
 pub fn capture_dsregcmd() -> Result<DsregcmdCaptureResult, String> {

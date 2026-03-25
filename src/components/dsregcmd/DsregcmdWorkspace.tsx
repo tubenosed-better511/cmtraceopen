@@ -1211,31 +1211,36 @@ function getFactGroups(
                       ? ("warn" as const)
                       : ("good" as const),
               },
-              ...result.enrollmentEvidence.enrollments.map((e, i) => {
-                const hasTaskMatch =
-                  e.guid != null &&
-                  result.scheduledTaskEvidence?.enterpriseMgmtGuids?.some(
-                    (t) => t.toLowerCase() === e.guid!.toLowerCase(),
-                  );
-                return {
-                  label: `Enrollment ${i + 1}`,
-                  value: [
-                    e.guid ?? "(no GUID)",
-                    e.upn ?? "(no UPN)",
-                    e.providerId ?? "(no provider)",
-                    e.enrollmentState != null
-                      ? `state=${e.enrollmentState}`
-                      : "",
-                    hasTaskMatch ? "task-matched" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" — "),
-                  tone:
-                    e.enrollmentState === 1 && hasTaskMatch
-                      ? ("good" as const)
-                      : undefined,
-                };
-              }),
+              ...(() => {
+                const taskGuidSet = new Set(
+                  (result.scheduledTaskEvidence?.enterpriseMgmtGuids ?? []).map(
+                    (g) => g.toLowerCase(),
+                  ),
+                );
+                return result.enrollmentEvidence!.enrollments.map((e, i) => {
+                  const guidLower = e.guid?.toLowerCase();
+                  const hasTaskMatch =
+                    guidLower != null && taskGuidSet.has(guidLower);
+                  return {
+                    label: `Enrollment ${i + 1}`,
+                    value: [
+                      e.guid ?? "(no GUID)",
+                      e.upn ?? "(no UPN)",
+                      e.providerId ?? "(no provider)",
+                      e.enrollmentState != null
+                        ? `state=${e.enrollmentState}`
+                        : "",
+                      hasTaskMatch ? "task-matched" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" — "),
+                    tone:
+                      e.enrollmentState === 1 && hasTaskMatch
+                        ? ("good" as const)
+                        : undefined,
+                  };
+                });
+              })(),
             ]),
           },
         ]
@@ -1247,34 +1252,47 @@ function getFactGroups(
             title: "Enterprise Management Tasks",
             caption:
               "Scheduled task GUIDs under \\Microsoft\\Windows\\EnterpriseMgmt, cross-referenced with enrollment registry entries.",
-            rows: withNotReportedMetadata([
-              {
-                label: "Task GUID Count",
-                value: String(
-                  result.scheduledTaskEvidence.enterpriseMgmtGuids.length,
-                ),
-              },
-              ...result.scheduledTaskEvidence.enterpriseMgmtGuids.map(
-                (guid) => {
-                  const matchingEnrollment =
-                    result.enrollmentEvidence?.enrollments.find(
-                      (e) =>
-                        e.guid?.toLowerCase() === guid.toLowerCase(),
-                    );
-                  const enrolled =
-                    matchingEnrollment?.enrollmentState === 1;
-                  return {
-                    label: guid,
-                    value: matchingEnrollment
-                      ? `Registry match — ${matchingEnrollment.upn ?? "(no UPN)"} — state=${matchingEnrollment.enrollmentState}`
-                      : "No matching enrollment registry entry",
-                    tone: enrolled
-                      ? ("good" as const)
-                      : ("neutral" as const),
-                  };
+            rows: (() => {
+              const enrollments =
+                result.enrollmentEvidence?.enrollments ?? [];
+              const enrollmentByGuid = new Map<
+                string,
+                (typeof enrollments)[number]
+              >();
+              for (const enrollment of enrollments) {
+                const key = enrollment.guid?.toLowerCase();
+                if (key && !enrollmentByGuid.has(key)) {
+                  enrollmentByGuid.set(key, enrollment);
+                }
+              }
+              return withNotReportedMetadata([
+                {
+                  label: "Task GUID Count",
+                  value: String(
+                    result.scheduledTaskEvidence.enterpriseMgmtGuids
+                      .length,
+                  ),
                 },
-              ),
-            ]),
+                ...result.scheduledTaskEvidence.enterpriseMgmtGuids.map(
+                  (guid) => {
+                    const matchingEnrollment = enrollmentByGuid.get(
+                      guid.toLowerCase(),
+                    );
+                    const enrolled =
+                      matchingEnrollment?.enrollmentState === 1;
+                    return {
+                      label: guid,
+                      value: matchingEnrollment
+                        ? `Registry match — ${matchingEnrollment.upn ?? "(no UPN)"} — state=${matchingEnrollment.enrollmentState}`
+                        : "No matching enrollment registry entry",
+                      tone: enrolled
+                        ? ("good" as const)
+                        : ("neutral" as const),
+                    };
+                  },
+                ),
+              ]);
+            })(),
           },
         ]
       : []),
