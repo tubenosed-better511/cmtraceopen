@@ -1,3 +1,4 @@
+use chrono::FixedOffset;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -189,7 +190,15 @@ fn try_iso(line: &str) -> Option<LogEntry> {
 
     let timestamp = chrono::NaiveDate::from_ymd_opt(yr, mon, day)
         .and_then(|d| d.and_hms_milli_opt(h, m, s, ms))
-        .map(|dt| dt.and_utc().timestamp_millis());
+        .and_then(|naive| {
+            if let Some(offset_minutes) = tz_offset {
+                FixedOffset::east_opt(offset_minutes * 60)
+                    .and_then(|offset| offset.from_local_datetime(&naive).single())
+                    .map(|dt| dt.timestamp_millis())
+            } else {
+                Some(naive.and_utc().timestamp_millis())
+            }
+        });
 
     let timestamp_display = Some(format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",

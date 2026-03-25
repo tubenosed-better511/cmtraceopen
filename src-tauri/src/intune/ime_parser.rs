@@ -303,7 +303,7 @@ fn parse_timestamp_fields(
     };
 
     let (timestamp_millis, timestamp_display) =
-        build_timestamp(month, day, year, hour, minute, second, millis);
+        build_timestamp(month, day, year, hour, minute, second, millis, timezone_offset);
     let line_timestamp = timestamp_display.clone();
     let line_timestamp_utc = build_utc_timestamp(
         month,

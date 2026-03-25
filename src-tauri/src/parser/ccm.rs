@@ -7,6 +7,7 @@
 //! The regex patterns are derived directly from the scanf format strings
 //! extracted from the CMTrace.exe binary (see REVERSE_ENGINEERING.md).
 
+use chrono::FixedOffset;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -54,7 +55,7 @@ fn parse_line(line: &str) -> Option<CcmParsed> {
     let file = caps.name("file").map(|m| m.as_str().to_string());
 
     let severity = severity_from_type_field(Some(typ), &msg);
-    let (timestamp, timestamp_display) = build_timestamp(mon, day, yr, h, m, s, ms);
+    let (timestamp, timestamp_display) = build_timestamp(mon, day, yr, h, m, s, ms, Some(tz));
     let thread_display = Some(format_thread_display(thr));
 
     Some(CcmParsed {
@@ -98,10 +99,20 @@ pub(crate) fn build_timestamp(
     minute: u32,
     second: u32,
     millis: u32,
+    timezone_offset: Option<i32>,
 ) -> (Option<i64>, Option<String>) {
-    let timestamp = chrono::NaiveDate::from_ymd_opt(year, month, day)
-        .and_then(|date| date.and_hms_milli_opt(hour, minute, second, millis))
-        .map(|value| value.and_utc().timestamp_millis());
+    let naive = chrono::NaiveDate::from_ymd_opt(year, month, day)
+        .and_then(|date| date.and_hms_milli_opt(hour, minute, second, millis));
+
+    let timestamp = naive.and_then(|naive| {
+        if let Some(offset_minutes) = timezone_offset {
+            FixedOffset::east_opt(offset_minutes * 60)
+                .and_then(|offset| offset.from_local_datetime(&naive).single())
+                .map(|dt| dt.timestamp_millis())
+        } else {
+            Some(naive.and_utc().timestamp_millis())
+        }
+    });
     let timestamp_display = Some(format!(
         "{:02}-{:02}-{:04} {:02}:{:02}:{:02}.{:03}",
         month, day, year, hour, minute, second, millis
@@ -248,6 +259,52 @@ mod tests {
             parsed.timestamp_display.as_deref(),
             Some("09-02-2016 08:06:34.590")
         );
+        // 08:06:34.590 in UTC-1 == 09:06:34.590 UTC
+        let expected_ts = FixedOffset::east_opt(-60 * 60)
+            .unwrap()
+            .from_local_datetime(
+                &chrono::NaiveDate::from_ymd_opt(2016, 9, 2)
+                    .unwrap()
+                    .and_hms_milli_opt(8, 6, 34, 590)
+                    .unwrap(),
+            )
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(parsed.timestamp, Some(expected_ts));
+    }
+
+    #[test]
+    fn test_build_timestamp_utc_offset() {
+        // +000 offset: naive time equals UTC
+        let (ts_utc, _) = build_timestamp(1, 1, 2024, 10, 0, 0, 0, Some(0));
+        let expected_utc = chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_milli_opt(10, 0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        assert_eq!(ts_utc, Some(expected_utc));
+
+        // -240 offset (UTC-4 / EST): 10:00 local == 14:00 UTC
+        let (ts_est, _) = build_timestamp(1, 1, 2024, 10, 0, 0, 0, Some(-240));
+        let expected_est = chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_milli_opt(14, 0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        assert_eq!(ts_est, Some(expected_est));
+
+        // +240 offset (UTC+4): 10:00 local == 06:00 UTC
+        let (ts_plus4, _) = build_timestamp(1, 1, 2024, 10, 0, 0, 0, Some(240));
+        let expected_plus4 = chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_milli_opt(6, 0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        assert_eq!(ts_plus4, Some(expected_plus4));
     }
 
     #[test]
