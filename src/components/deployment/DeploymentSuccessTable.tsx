@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
+import { LOG_MONOSPACE_FONT_FAMILY } from "../../lib/log-accessibility";
 import type { DeploymentLogFile } from "../../stores/deployment-store";
 
 function displayName(file: DeploymentLogFile): string {
@@ -71,7 +72,7 @@ const COLUMNS: Column[] = [
     defaultWidth: 140,
     minWidth: 60,
     render: (f) => formatTimestamp(f.startTime),
-    style: { fontFamily: "monospace", fontSize: "11px", color: tokens.colorNeutralForeground3 },
+    style: { fontFamily: LOG_MONOSPACE_FONT_FAMILY, fontSize: "11px", color: tokens.colorNeutralForeground3 },
   },
   {
     key: "end",
@@ -79,7 +80,7 @@ const COLUMNS: Column[] = [
     defaultWidth: 140,
     minWidth: 60,
     render: (f) => formatTimestamp(f.endTime),
-    style: { fontFamily: "monospace", fontSize: "11px", color: tokens.colorNeutralForeground3 },
+    style: { fontFamily: LOG_MONOSPACE_FONT_FAMILY, fontSize: "11px", color: tokens.colorNeutralForeground3 },
   },
 ];
 

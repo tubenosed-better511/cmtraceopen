@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Badge, tokens } from "@fluentui/react-components";
+import { LOG_UI_FONT_FAMILY } from "../../lib/log-accessibility";
 import {
   getActiveSourceLabel,
   getBaseName,
@@ -343,7 +344,7 @@ export function StatusBar() {
         backgroundColor: tokens.colorNeutralBackground2,
         borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
         fontSize: "12px",
-        fontFamily: "'Segoe UI', Tahoma, sans-serif",
+        fontFamily: LOG_UI_FONT_FAMILY,
         flexShrink: 0,
         minHeight: "34px",
         gap: "10px",

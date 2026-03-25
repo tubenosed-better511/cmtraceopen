@@ -1,4 +1,5 @@
 import { tokens, Button } from "@fluentui/react-components";
+import { LOG_MONOSPACE_FONT_FAMILY } from "../../lib/log-accessibility";
 import {
   useDeploymentStore,
   type DeploymentLogFile,
@@ -129,7 +130,7 @@ export function DeploymentErrorCard({
             backgroundColor: tokens.colorNeutralBackground3,
             borderRadius: "3px",
             fontSize: "12px",
-            fontFamily: "monospace",
+            fontFamily: LOG_MONOSPACE_FONT_FAMILY,
             maxHeight: "200px",
             overflow: "auto",
           }}
@@ -157,7 +158,7 @@ export function DeploymentErrorCard({
                   padding: 0,
                   cursor: "pointer",
                   color: tokens.colorNeutralForeground3,
-                  fontFamily: "monospace",
+                  fontFamily: LOG_MONOSPACE_FONT_FAMILY,
                   fontSize: "inherit",
                   textDecoration: "underline",
                 }}
