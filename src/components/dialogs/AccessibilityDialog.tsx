@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { tokens } from "@fluentui/react-components";
+import { tokens, Spinner } from "@fluentui/react-components";
 import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_LOG_DETAILS_FONT_SIZE,
@@ -36,6 +36,7 @@ export function AccessibilityDialog({ isOpen, onClose }: AccessibilityDialogProp
   const resetLogAccessibilityPreferences = useUiStore(
     (state) => state.resetLogAccessibilityPreferences
   );
+
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
 
@@ -279,7 +280,7 @@ export function AccessibilityDialog({ isOpen, onClose }: AccessibilityDialogProp
                   color: tokens.colorNeutralForeground3,
                 }}
               >
-                Loading system fonts...
+                <Spinner size="tiny" label="Loading system fonts..." />
               </div>
             ) : (
               <>

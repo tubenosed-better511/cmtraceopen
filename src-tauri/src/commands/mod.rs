@@ -6,6 +6,6 @@ pub mod file_ops;
 pub mod filter;
 pub mod fonts;
 pub mod intune;
+pub mod macos_diag;
 pub mod parsing;
 pub mod system_preferences;
-pub mod macos_diag;

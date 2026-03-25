@@ -65,6 +65,7 @@ pub fn run() {
             commands::error_lookup::search_error_codes,
             commands::intune::analyze_intune_logs,
             commands::deployment::analyze_deployment_folder,
+            commands::fonts::list_system_fonts,
             commands::dsregcmd::analyze_dsregcmd,
             commands::dsregcmd::capture_dsregcmd,
             commands::dsregcmd::load_dsregcmd_source,
