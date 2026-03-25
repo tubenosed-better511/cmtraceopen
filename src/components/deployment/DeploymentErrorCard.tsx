@@ -40,10 +40,28 @@ export function DeploymentErrorCard({
             style={{
               fontSize: "12px",
               color: tokens.colorNeutralForeground3,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
             }}
           >
-            {file.appName ? file.fileName : ""}{file.appVersion ? ` v${file.appVersion}` : ""}{" "}
-            {file.format} {file.exitCode != null && `· exit ${file.exitCode}`}
+            {file.deployType && (
+              <span
+                style={{
+                  padding: "1px 6px",
+                  borderRadius: "3px",
+                  backgroundColor: tokens.colorNeutralBackground3,
+                  fontSize: "11px",
+                  fontWeight: 600,
+                }}
+              >
+                {file.deployType}
+              </span>
+            )}
+            <span>
+              {file.appName ? file.fileName : ""}{file.appVersion ? ` v${file.appVersion}` : ""}{" "}
+              {file.format} {file.exitCode != null && `· exit ${file.exitCode}`}
+            </span>
           </div>
         </div>
         {file.errorLines.length > 0 && (

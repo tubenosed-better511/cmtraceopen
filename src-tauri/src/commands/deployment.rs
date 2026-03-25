@@ -67,6 +67,9 @@ pub struct DeploymentLogFile {
     pub error_lines: Vec<DeploymentErrorLine>,
     pub app_name: Option<String>,
     pub app_version: Option<String>,
+    pub deploy_type: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,6 +125,16 @@ static BURN_VERSION_RE: Lazy<Regex> = Lazy::new(|| {
 // PatchMyPC: "Starting UserNotification V2.1.100.317"
 static PATCHMYPC_VERSION_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)Starting\s+UserNotification\s+V([\d.]+)").unwrap()
+});
+
+// MSI command line: /i = install, /x = uninstall, /f = repair
+static MSI_CMDLINE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)CommandLine:\s+(.*)").unwrap()
+});
+
+// PSADT deploy type: "installationType [Install]" or in the session message
+static PSADT_DEPLOY_TYPE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(?:deployment\s*type|installation\s*type|deploy\s*mode)\s*[:\s]*\[?\s*(Install|Uninstall|Repair)\b").unwrap()
 });
 
 // ── PSADT keywords ──────────────────────────────────────────────────────
@@ -282,6 +295,65 @@ fn parse_psadt_app_info(info: &str) -> (Option<String>, Option<String>) {
     }
     // Can't split — return the whole thing as the app name
     (Some(info.to_string()), None)
+}
+
+// ── Deploy type extraction ──────────────────────────────────────────────
+
+fn extract_deploy_type(format: &DeploymentFormat, entries: &[LogEntry]) -> Option<String> {
+    match format {
+        DeploymentFormat::MsiVerbose => {
+            for entry in entries.iter() {
+                if let Some(caps) = MSI_CMDLINE_RE.captures(&entry.message) {
+                    let cmd = caps[1].to_ascii_lowercase();
+                    if cmd.contains("/x") || cmd.contains("remove=all") {
+                        return Some("Uninstall".to_string());
+                    }
+                    if cmd.contains("/f") {
+                        return Some("Repair".to_string());
+                    }
+                    if cmd.contains("/i") || cmd.contains("/qn") || cmd.contains("/qb") {
+                        return Some("Install".to_string());
+                    }
+                }
+            }
+            // Default for MSI with no clear command line
+            Some("Install".to_string())
+        }
+        DeploymentFormat::PsadtCmtrace
+        | DeploymentFormat::PsadtWrapper
+        | DeploymentFormat::PsadtLegacy => {
+            for entry in entries.iter() {
+                let text = &entry.message;
+                if let Some(caps) = PSADT_DEPLOY_TYPE_RE.captures(text) {
+                    let dt = caps[1].to_string();
+                    // Capitalize first letter
+                    let mut chars = dt.chars();
+                    let capitalized = match chars.next() {
+                        Some(c) => c.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                        None => dt,
+                    };
+                    return Some(capitalized);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+// ── Timestamp extraction ────────────────────────────────────────────────
+
+fn extract_timestamps(entries: &[LogEntry]) -> (Option<String>, Option<String>) {
+    let start = entries
+        .iter()
+        .find(|e| e.timestamp_display.is_some())
+        .and_then(|e| e.timestamp_display.clone());
+    let end = entries
+        .iter()
+        .rev()
+        .find(|e| e.timestamp_display.is_some())
+        .and_then(|e| e.timestamp_display.clone());
+    (start, end)
 }
 
 // ── Exit code extraction ────────────────────────────────────────────────
@@ -480,6 +552,8 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
                 _ => Vec::new(),
             };
             let (app_name, app_version) = extract_app_metadata(&format, &result.entries);
+            let deploy_type = extract_deploy_type(&format, &result.entries);
+            let (start_time, end_time) = extract_timestamps(&result.entries);
 
             DeploymentLogFile {
                 path: file_path.to_string(),
@@ -491,6 +565,9 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
                 error_lines,
                 app_name,
                 app_version,
+                deploy_type,
+                start_time,
+                end_time,
             }
         }
         Err(_) => DeploymentLogFile {
@@ -503,6 +580,9 @@ fn analyze_single_file(file_path: &str) -> DeploymentLogFile {
             error_lines: Vec::new(),
             app_name: None,
             app_version: None,
+            deploy_type: None,
+            start_time: None,
+            end_time: None,
         },
     }
 }
@@ -779,5 +859,49 @@ mod tests {
         let (name, version) = parse_psadt_app_info("SingleName");
         assert_eq!(name.as_deref(), Some("SingleName"));
         assert!(version.is_none());
+    }
+
+    #[test]
+    fn test_msi_deploy_type_install() {
+        let entries = vec![
+            make_entry("CommandLine: /i setup.msi /qn", Severity::Info),
+        ];
+        assert_eq!(
+            extract_deploy_type(&DeploymentFormat::MsiVerbose, &entries).as_deref(),
+            Some("Install")
+        );
+    }
+
+    #[test]
+    fn test_msi_deploy_type_uninstall() {
+        let entries = vec![
+            make_entry("CommandLine: /x {GUID} /qn", Severity::Info),
+        ];
+        assert_eq!(
+            extract_deploy_type(&DeploymentFormat::MsiVerbose, &entries).as_deref(),
+            Some("Uninstall")
+        );
+    }
+
+    #[test]
+    fn test_psadt_deploy_type() {
+        let entries = vec![
+            make_entry("Deployment Type [Install]", Severity::Info),
+        ];
+        assert_eq!(
+            extract_deploy_type(&DeploymentFormat::PsadtCmtrace, &entries).as_deref(),
+            Some("Install")
+        );
+    }
+
+    #[test]
+    fn test_timestamps_extraction() {
+        let mut e1 = make_entry("first", Severity::Info);
+        e1.timestamp_display = Some("2025-11-25 01:55:42.000".to_string());
+        let mut e2 = make_entry("last", Severity::Info);
+        e2.timestamp_display = Some("2025-11-25 02:10:00.000".to_string());
+        let (start, end) = extract_timestamps(&[e1, e2]);
+        assert_eq!(start.as_deref(), Some("2025-11-25 01:55:42.000"));
+        assert_eq!(end.as_deref(), Some("2025-11-25 02:10:00.000"));
     }
 }

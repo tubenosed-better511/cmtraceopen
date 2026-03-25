@@ -5,6 +5,13 @@ function displayName(file: DeploymentLogFile): string {
   return file.appName ?? file.fileName;
 }
 
+function formatTimestamp(ts: string | null): string {
+  if (!ts) return "";
+  // Trim sub-second precision for compact display
+  const dotIndex = ts.indexOf(".");
+  return dotIndex > 0 ? ts.substring(0, dotIndex) : ts;
+}
+
 export function DeploymentSuccessTable({
   files,
 }: {
@@ -34,9 +41,12 @@ export function DeploymentSuccessTable({
           >
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Application</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Version</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Type</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Format</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Outcome</th>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Exit Code</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Start</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600 }}>End</th>
           </tr>
         </thead>
         <tbody>
@@ -56,7 +66,10 @@ export function DeploymentSuccessTable({
                 {displayName(file)}
               </td>
               <td style={{ padding: "5px 10px" }}>
-                {file.appVersion ?? "—"}
+                {file.appVersion ?? ""}
+              </td>
+              <td style={{ padding: "5px 10px" }}>
+                {file.deployType ?? ""}
               </td>
               <td style={{ padding: "5px 10px" }}>{file.format}</td>
               <td
@@ -71,7 +84,27 @@ export function DeploymentSuccessTable({
                 {file.outcome}
               </td>
               <td style={{ padding: "5px 10px" }}>
-                {file.exitCode ?? "—"}
+                {file.exitCode ?? ""}
+              </td>
+              <td
+                style={{
+                  padding: "5px 10px",
+                  fontFamily: "monospace",
+                  fontSize: "11px",
+                  color: tokens.colorNeutralForeground3,
+                }}
+              >
+                {formatTimestamp(file.startTime)}
+              </td>
+              <td
+                style={{
+                  padding: "5px 10px",
+                  fontFamily: "monospace",
+                  fontSize: "11px",
+                  color: tokens.colorNeutralForeground3,
+                }}
+              >
+                {formatTimestamp(file.endTime)}
               </td>
             </tr>
           ))}

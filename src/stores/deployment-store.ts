@@ -18,6 +18,9 @@ export interface DeploymentLogFile {
   errorLines: DeploymentErrorLine[];
   appName: string | null;
   appVersion: string | null;
+  deployType: string | null;
+  startTime: string | null;
+  endTime: string | null;
 }
 
 export interface DeploymentErrorLine {
