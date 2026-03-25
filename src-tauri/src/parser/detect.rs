@@ -254,6 +254,19 @@ pub fn detect_parser(path: &str, content: &str) -> ResolvedParser {
         .take(20)
         .collect();
 
+    // Early detection: DHCP logs have a ~35-line header before any CSV data.
+    // The first 20 non-empty lines are all header text, so content-based matching
+    // won't find data rows. Detect via header signature or path hint + header.
+    {
+        let content_lower = content.to_ascii_lowercase();
+        if content_lower.starts_with("\t\tmicrosoft dhcp")
+            || content_lower.contains("microsoft dhcp service activity log")
+            || content_lower.contains("microsoft dhcpv6 service activity log")
+        {
+            return ResolvedParser::dhcp();
+        }
+    }
+
     let path_lower = path.to_ascii_lowercase();
     let panther_path_hint = path_lower.contains("panther")
         || path_lower.ends_with("setupact.log")
